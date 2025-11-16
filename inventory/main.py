@@ -3,12 +3,14 @@
 import pygame
 import sys
 import random
+import os
 
 try:
     import config as cfg
     from item_generator import create_mod_item
-    from player_stats import PlayerStats
-    from ui_elements import Button, GridPanel, render_text # GridPanel for inv logic
+    # 1.3 导入拆分后的 PlayerLogic 和 StatsPanelRenderer
+    from player_stats import PlayerLogic, StatsPanelRenderer, STAT_PANEL_FIXED_WIDTH, STAT_PANEL_FIXED_HEIGHT
+    from ui_elements import Button, GridPanel, render_text
     from inventory_gui import InventoryScreen
 except ImportError as e:
     print(f"错误：main.py 导入失败: {e}")
@@ -18,84 +20,71 @@ class MainMenu:
     """主菜单/测试界面"""
     def __init__(self):
         pygame.init()
-        pygame.display.set_caption(cfg.WINDOW_TITLE) # 1.4
+        pygame.display.set_caption(cfg.WINDOW_TITLE)
         
-        # 1.1 窗口大小和可缩放
         self.screen = pygame.display.set_mode(
             (cfg.SCREEN_WIDTH, cfg.SCREEN_HEIGHT), 
             pygame.RESIZABLE if cfg.SCREEN_RESIZABLE else 0
         )
-        self.screen_width, self.screen_height = self.screen.get_size()
         
         self.clock = pygame.time.Clock()
         self.running = True
         
-        # 加载字体
+        # 1.2 加载指定字体
+        font_path = cfg.FONT_PATH
+        if not os.path.exists(font_path):
+            print(f"警告：字体文件 {font_path} 不存在，尝试使用系统默认字体。")
+            font_path = None # Fallback
+            
         try:
-            # 尝试使用 'SimHei'
             self.fonts = {
-                "main": pygame.font.SysFont("SimHei", cfg.FONT_SIZE_MAIN),
-                "small": pygame.font.SysFont("SimHei", cfg.FONT_SIZE_SMALL),
-                "affix_main": pygame.font.SysFont("SimHei", cfg.FONT_SIZE_AFFIX_MAIN),
-                "affix_other": pygame.font.SysFont("SimHei", cfg.FONT_SIZE_AFFIX_OTHER),
-                "button": pygame.font.SysFont("SimHei", cfg.FONT_SIZE_BUTTON),
+                "main": pygame.font.Font(font_path, cfg.FONT_SIZE_MAIN) if font_path else pygame.font.SysFont("SimHei", cfg.FONT_SIZE_MAIN),
+                "small": pygame.font.Font(font_path, cfg.FONT_SIZE_SMALL) if font_path else pygame.font.SysFont("SimHei", cfg.FONT_SIZE_SMALL),
+                "affix_main": pygame.font.Font(font_path, cfg.FONT_SIZE_AFFIX_MAIN) if font_path else pygame.font.SysFont("SimHei", cfg.FONT_SIZE_AFFIX_MAIN), # Bold handled in render
+                "affix_other": pygame.font.Font(font_path, cfg.FONT_SIZE_AFFIX_OTHER) if font_path else pygame.font.SysFont("SimHei", cfg.FONT_SIZE_AFFIX_OTHER),
+                "button": pygame.font.Font(font_path, cfg.FONT_SIZE_BUTTON) if font_path else pygame.font.SysFont("SimHei", cfg.FONT_SIZE_BUTTON),
             }
-        except:
-            print("警告：'SimHei' 字体未找到，使用默认字体。")
-            self.fonts = {
-                "main": pygame.font.Font(None, cfg.FONT_SIZE_MAIN),
-                "small": pygame.font.Font(None, cfg.FONT_SIZE_SMALL),
-                "affix_main": pygame.font.Font(None, cfg.FONT_SIZE_AFFIX_MAIN + 2), # Default bold
-                "affix_other": pygame.font.Font(None, cfg.FONT_SIZE_AFFIX_OTHER),
-                "button": pygame.font.Font(None, cfg.FONT_SIZE_BUTTON + 2),
-            }
+        except Exception as e:
+            print(f"字体加载失败: {e}")
+            sys.exit()
 
-        # 游戏状态 (数据)
-        # 我们用字典 {item: (r, c)} 来存储
+        # 游戏数据
         self.mod_items = {} 
         self.inv_items = {}
         
-        # 玩家属性
-        self.player_stats = PlayerStats(self.fonts)
+        # 1.3 初始化逻辑和渲染
+        self.player_logic = PlayerLogic()
+        self.stats_renderer = StatsPanelRenderer(self.fonts)
         
-        # 2.3 界面元素
+        # 界面元素
         self.buttons = []
         self.stats_panel_rect = pygame.Rect(0,0,1,1)
         
-        # 临时创建 inv_panel 只是为了 'find_first_empty_slot' 逻辑
-        # 它不会被绘制
+        # 逻辑面板 (不显示，仅用于计算空位)
         self.inv_panel_logic = GridPanel((0,0,1,1), cfg.INV_PANEL_ROWS, cfg.INV_PANEL_COLS)
 
-        self._calculate_layout(self.screen_width, self.screen_height)
+        self._calculate_layout(self.screen.get_width(), self.screen.get_height())
         
-        # 添加初始物品
+        # 初始物品
         self._generate_test_items()
-        self.player_stats.calculate_stats(self.mod_items.keys())
+        self.player_logic.calculate_stats(self.mod_items.keys())
 
     def _generate_test_items(self):
         """生成初始测试物品"""
-        item1 = create_mod_item("普通", 1, "游荡者")
-        self.add_item_to_inventory(item1)
-        
-        item2 = create_mod_item("精良", 5, "铁皮")
-        self.add_item_to_inventory(item2)
-        
-        item5 = create_mod_item("精良", 5, "游荡者")
-        # 装备上
-        self.mod_items[item5] = (0, 0)
+        self.add_item_to_inventory(create_mod_item("普通", 1, "游荡者"))
+        self.add_item_to_inventory(create_mod_item("精良", 5, "铁桶"))
+        item_equipped = create_mod_item("精良", 5, "游荡者")
+        self.mod_items[item_equipped] = (0, 0)
         
 
     def _calculate_layout(self, width, height):
         """计算主菜单布局"""
-        self.screen_width = width
-        self.screen_height = height
-        
-        # 属性面板在右侧
+        # 属性面板在右侧，使用固定尺寸
         self.stats_panel_rect = pygame.Rect(
-            width - cfg.STATS_PANEL_WIDTH - cfg.PANEL_GAP,
+            width - STAT_PANEL_FIXED_WIDTH - cfg.PANEL_GAP,
             cfg.PANEL_GAP,
-            cfg.STATS_PANEL_WIDTH,
-            height - cfg.PANEL_GAP * 2
+            STAT_PANEL_FIXED_WIDTH,
+            STAT_PANEL_FIXED_HEIGHT
         )
         
         # 按钮在左侧
@@ -126,7 +115,6 @@ class MainMenu:
 
     def add_item_to_inventory(self, item):
         """安全地将物品添加到背包的第一个空位"""
-        # 同步逻辑面板
         self.inv_panel_logic.items = {}
         self.inv_panel_logic.grid_data = [[None for _ in range(cfg.INV_PANEL_COLS)] for _ in range(cfg.INV_PANEL_ROWS)]
         for i, (r, c) in self.inv_items.items():
@@ -161,42 +149,46 @@ class MainMenu:
                 self.screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
                 self._calculate_layout(event.w, event.h)
             
-            # 检查按钮点击
             for button in self.buttons:
                 action = button.handle_event(event, mouse_pos)
                 if action:
                     self.handle_button_click(action)
-                    break # 每次点击只处理一个按钮
+                    break 
 
     def handle_button_click(self, action):
         """处理按钮动作"""
+        # 定义掉落来源列表 (为了代码示例，我们假设 MOB_SOURCES 是可用的)
+        MOB_SOURCES = ["游荡者", "铁桶", "食尸鬼"] 
+        
         if action == "inventory":
-            # 2.3 进入背包
+            # 传入逻辑类实例
             inv_screen = InventoryScreen(
-                self.screen, self.fonts, self.player_stats, 
+                self.screen, self.fonts, self.player_logic, 
                 self.mod_items, self.inv_items
             )
-            # 阻塞式运行背包，直到返回
+            # 阻塞运行
             new_mods, new_inv = inv_screen.run()
             
-            # 更新主菜单的数据
             self.mod_items = new_mods
             self.inv_items = new_inv
             
-            # 重新计算属性
-            self.player_stats.calculate_stats(self.mod_items.keys())
+            self.player_logic.calculate_stats(self.mod_items.keys())
         
         elif action == "gen_common":
-            item = create_mod_item("普通", random.randint(1, 5))
+            source = random.choice(MOB_SOURCES)
+            item = create_mod_item("普通", random.randint(1, 5), source)
             self.add_item_to_inventory(item)
         elif action == "gen_rare":
-            item = create_mod_item("精良", random.randint(5, 10))
+            source = random.choice(MOB_SOURCES)
+            item = create_mod_item("精良", random.randint(5, 10), source)
             self.add_item_to_inventory(item)
         elif action == "gen_epic":
-            item = create_mod_item("史诗", random.randint(10, 15))
+            source = random.choice(MOB_SOURCES)
+            item = create_mod_item("史诗", random.randint(10, 15), source)
             self.add_item_to_inventory(item)
         elif action == "gen_legendary":
-            item = create_mod_item("传奇", random.randint(15, 20))
+            source = random.choice(MOB_SOURCES)
+            item = create_mod_item("传奇", random.randint(15, 20), source)
             self.add_item_to_inventory(item)
 
     def draw(self):
@@ -208,12 +200,11 @@ class MainMenu:
         title = render_text(self.fonts["main"], "主菜单 / 测试平台", cfg.COLOR_TEXT_HEADER, bold=True)
         self.screen.blit(title, (cfg.PANEL_GAP * 2, cfg.PANEL_GAP))
         
-        # 绘制按钮
         for button in self.buttons:
             button.draw(self.screen, mouse_pos)
             
-        # 绘制属性面板
-        self.player_stats.draw(self.screen, self.stats_panel_rect)
+        # 1.3 绘制属性面板
+        self.stats_renderer.draw(self.screen, self.stats_panel_rect, self.player_logic)
         
         pygame.display.flip()
 

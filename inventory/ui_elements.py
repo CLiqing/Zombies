@@ -1,6 +1,8 @@
 # ui_elements.py
 # 包含 GridPanel, Button, 和绘图辅助函数
 import pygame
+import sys # 确保导入 sys 用于错误处理
+
 try:
     import config as cfg
 except ImportError:
@@ -16,7 +18,7 @@ def render_text(font, text, color, bold=False, italic=False, antialias=True):
     return font.render(text, antialias, color)
 
 def draw_tooltip(surface, item, x, y, fonts):
-    """绘制物品悬停提示框 (1.6.4 更新)"""
+    """绘制物品悬停提示框"""
     if not item:
         return
 
@@ -26,42 +28,66 @@ def draw_tooltip(surface, item, x, y, fonts):
     font_affix_other = fonts["affix_other"]
 
     # 1. 准备文本
-    texts = []
+    header_texts = []
+    main_affix_texts = []
+    other_affix_texts = []
     
     # Line 1: 名称
     name_str = f"{item.bias_display_name}的{item.quality}源质"
-    texts.append(render_text(font_main, name_str, item.color, bold=True))
+    header_texts.append(render_text(font_main, name_str, item.color, bold=True))
     
-    # Line 2: 等级
-    level_str = f"Lv {item.monster_level} (c={item.c}, n={item.n})"
-    texts.append(render_text(font_small, level_str, cfg.COLOR_TEXT))
+    # Line 2: 等级 (1.5 移除 c 和 n 的显示)
+    level_str = f"Lv {item.monster_level}"
+    header_texts.append(render_text(font_small, level_str, cfg.COLOR_TEXT))
     
-    # Line 3+: 词缀
+    # Line 3+: 词缀（分为主词条和其他词条）
     for affix in item.affixes:
         name = affix["name"]
         val = affix["value"]
         color = cfg.COLOR_TEXT
-        if name in cfg.AFFIX_POOLS["稀有"] or name in cfg.AFFIX_POOLS["枪械"]:
+        
+        # **【修正逻辑】**
+        # 稀有词缀判断：检查词缀名称是否在 RARE_AFFIX_NAMES 列表中
+        if name in cfg.RARE_AFFIX_NAMES:
             color = (100, 200, 255) # 稀有词缀高亮
         
-        if val < 1.0 and val > 0:
-            text_str = f"+{val:.2%} {name}"
+        # 格式化数值显示
+        if name == "生命回复":
+            # 生命回复始终显示为绝对值（HP/s），保留一位小数
+            text_str = f"+{val:.1f} {name}"
+        elif val < 1.0 and val > 0:
+            # 百分比显示：去掉名称末尾的%符号（如果有）
+            display_name = name.rstrip('%')
+            text_str = f"+{val:.2%} {display_name}"
+        elif name in ["护甲穿透", "射程"] and val == int(val):
+            # 护甲穿透和射程虽然是稀有词缀，但可能需要显示为整数
+            text_str = f"+{int(val)} {name}"
         elif isinstance(val, float):
              text_str = f"+{val:.1f} {name}"
         else:
             text_str = f"+{int(val)} {name}"
         
-        # 1.6.4: 主词条
         is_main = affix.get("is_main", False)
         font_to_use = font_affix_main if is_main else font_affix_other
         text_surf = render_text(font_to_use, text_str, color, bold=is_main)
-        texts.append(text_surf)
+        
+        # 根据是否是主词条分类
+        if is_main:
+            main_affix_texts.append(text_surf)
+        else:
+            other_affix_texts.append(text_surf)
 
 
     # 2. 计算背景框大小
-    if not texts: return
-    max_w = max(t.get_width() for t in texts)
-    total_h = sum(t.get_height() for t in texts) + (len(texts) - 1) * 5
+    all_texts = header_texts + main_affix_texts + other_affix_texts
+    if not all_texts: return
+    
+    max_w = max(t.get_width() for t in all_texts)
+    
+    # 计算总高度：包括文本高度、间距、以及分隔线
+    total_h = sum(t.get_height() for t in all_texts) + (len(all_texts) - 1) * 5
+    if main_affix_texts and other_affix_texts:
+        total_h += 10  # 为分隔线增加额外空间
     
     padding = 10
     bg_rect = pygame.Rect(0, 0, max_w + padding * 2, total_h + padding * 2)
@@ -80,14 +106,38 @@ def draw_tooltip(surface, item, x, y, fonts):
     pygame.draw.rect(tooltip_surface, item.color, (0, 0, bg_rect.width, bg_rect.height), 1)
     
     current_y = padding
-    for text in texts:
+    
+    # 绘制头部（名称和等级）
+    for text in header_texts:
+        tooltip_surface.blit(text, (padding, current_y))
+        current_y += text.get_height() + 5
+    
+    # 绘制主词条
+    for text in main_affix_texts:
+        tooltip_surface.blit(text, (padding, current_y))
+        current_y += text.get_height() + 5
+    
+    # 如果有主词条和副词条，绘制分隔线
+    if main_affix_texts and other_affix_texts:
+        current_y += 2  # 额外间距
+        line_y = current_y
+        pygame.draw.line(tooltip_surface, cfg.COLOR_GRID, 
+                        (padding, line_y), (bg_rect.width - padding, line_y), 1)
+        current_y += 8  # 分隔线后的间距
+    
+    # 绘制其他词条
+    for text in other_affix_texts:
         tooltip_surface.blit(text, (padding, current_y))
         current_y += text.get_height() + 5
         
     surface.blit(tooltip_surface, bg_rect.topleft)
 
 def draw_context_menu(surface, menu_data, font):
-    """绘制右键菜单"""
+    """
+    绘制右键菜单
+    1.6 更新: 支持 disabled 状态 (灰色且不可交互)
+    menu_data["options"] 结构现在预期为 [(text, action, enabled), ...]
+    """
     if not menu_data["active"]:
         return
         
@@ -100,20 +150,33 @@ def draw_context_menu(surface, menu_data, font):
     mouse_x, mouse_y = pygame.mouse.get_pos()
     
     current_y = rect.y + 5
-    for i, (text, action) in enumerate(options):
+    for i, option in enumerate(options):
+        # 兼容旧格式 (text, action) 和新格式 (text, action, enabled)
+        if len(option) == 3:
+            text, action, enabled = option
+        else:
+            text, action = option
+            enabled = True
+
         option_rect = pygame.Rect(rect.x, current_y, rect.width, 30)
-        color = cfg.COLOR_TEXT
         
-        if option_rect.collidepoint(mouse_x, mouse_y):
-            color = (255, 255, 255)
-            pygame.draw.rect(surface, cfg.COLOR_CONTEXT_HIGHLIGHT, option_rect)
+        text_color = cfg.COLOR_TEXT
+        bg_color = None
+
+        if not enabled:
+            text_color = cfg.COLOR_DISABLED # 灰色
+        elif option_rect.collidepoint(mouse_x, mouse_y):
+            text_color = (255, 255, 255)
+            bg_color = cfg.COLOR_CONTEXT_HIGHLIGHT
             
-        text_surf = render_text(font, text, color)
+        if bg_color:
+            pygame.draw.rect(surface, bg_color, option_rect)
+            
+        text_surf = render_text(font, text, text_color)
         surface.blit(text_surf, (rect.x + 10, current_y + (30 - text_surf.get_height()) // 2))
         current_y += 30
 
-# --- 核心UI类 ---
-
+# --- 核心UI类 (GridPanel, Button) 保持不变 ---
 class GridPanel:
     """代表一个网格区域 (强化面板或背包)"""
     def __init__(self, rect, rows, cols):
