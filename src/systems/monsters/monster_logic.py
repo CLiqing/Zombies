@@ -1,8 +1,14 @@
 # monsters/monster_logic.py
 import math
 import random
+import sys
+import os
+
+# 添加父目录到路径以便导入config
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
 # 导入自身目录下的配置
-import monsters.config as mcfg 
+from systems.monsters import config as mcfg 
 
 # --- 怪物基类 (Monster) ---
 class Monster:

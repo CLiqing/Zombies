@@ -1,6 +1,36 @@
 # Zombies
 Only for myself
 
+## 🎮 快速开始
+
+### 项目已重构！新结构更清晰、更易维护
+
+**查看详细结构说明**: [STRUCTURE.md](STRUCTURE.md)
+
+### 三个运行入口：
+
+1. **主游戏** - 完整的僵尸生存游戏
+   ```bash
+   cd src
+   python main.py
+   ```
+
+2. **背包系统测试** - 独立的装备和背包管理界面
+   ```bash
+   cd src/tests
+   python test_inventory.py
+   ```
+
+3. **怪物系统测试** - 怪物生成和平衡性测试
+   ```bash
+   cd src/tests
+   python test_monsters.py
+   ```
+
+---
+
+## 📋 游戏设计文档
+
 战斗体系可以是这样的：
 
 游戏开始界面只有一个按钮，开始游戏

@@ -11,11 +11,17 @@ CONTENT_OFFSET_X = 20            # 内容填充
 import pygame
 import sys
 import math
+import os
+
+# 添加路径以便导入
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 try:
-    import inventory.config as cfg
+    from systems.inventory import config as cfg
 except ImportError:
     print("错误：player_stats.py 无法导入 config.py。")
+    import traceback
+    traceback.print_exc()
     sys.exit()
 
 # 导入 render_text 辅助函数 (为了独立性暂时保留本地副本)

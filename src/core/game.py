@@ -4,15 +4,19 @@ import sys
 import math
 import random
 
+# 添加父目录到路径
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 # 导入所有模块
-import settings
-import drawing
-from citymap.citymap import CityMap
-from player import Player
-from bullet import Bullet
-from monster_sprite import MonsterSprite
-from monsters.monster_logic import generate_monsters
-from camera import Camera
+import config
+from core import drawing
+from systems.citymap.citymap import CityMap
+from entities.player import Player
+from entities.bullet import Bullet
+from entities.monster_sprite import MonsterSprite
+from systems.monsters.monster_logic import generate_monsters
+from core.camera import Camera
 
 class Game:
     """
@@ -22,7 +26,7 @@ class Game:
         pygame.init()
         pygame.font.init()
         
-        self.screen = pygame.display.set_mode((settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT))
+        self.screen = pygame.display.set_mode((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
         pygame.display.set_caption("Zombie Survival")
         self.clock = pygame.time.Clock()
         self.is_running = True
@@ -36,6 +40,10 @@ class Game:
         
         # 游戏状态
         self.current_day = 1
+        
+        # # DEBUG: 添加首帧暂停标志
+        # self.first_frame_rendered = False
+        # self.paused = False
         
         self.load_data()
 
@@ -59,14 +67,14 @@ class Game:
         # 4. 创建玩家
         start_r, start_c = self.city_map.get_player_position()
         # 将网格坐标转换为世界像素坐标 (中心)
-        start_x = start_c * settings.TILE_SIZE + settings.TILE_SIZE / 2
-        start_y = start_r * settings.TILE_SIZE + settings.TILE_SIZE / 2
+        start_x = start_c * config.TILE_SIZE + config.TILE_SIZE / 2
+        start_y = start_r * config.TILE_SIZE + config.TILE_SIZE / 2
         
         self.player = Player(start_x, start_y)
         self.all_sprites.add(self.player)
 
         # 5. 创建摄像机 (Spec II)
-        self.camera = Camera(settings.WORLD_WIDTH, settings.WORLD_HEIGHT)
+        self.camera = Camera(config.WORLD_WIDTH, config.WORLD_HEIGHT)
 
         # 6. 生成第一波怪物
         self.spawn_wave()
@@ -81,10 +89,10 @@ class Game:
                 if tile == '#' or tile == '~':
                     wall_sprite = pygame.sprite.Sprite()
                     wall_sprite.rect = pygame.Rect(
-                        c * settings.TILE_SIZE, 
-                        r * settings.TILE_SIZE, 
-                        settings.TILE_SIZE, 
-                        settings.TILE_SIZE
+                        c * config.TILE_SIZE, 
+                        r * config.TILE_SIZE, 
+                        config.TILE_SIZE, 
+                        config.TILE_SIZE
                     )
                     # (用于怪物 AI 区分)
                     wall_sprite.tile_type = tile 
@@ -98,8 +106,8 @@ class Game:
         for data in monster_data_list:
             r, c = data.position
             # 转换为世界像素坐标 (中心)
-            x = c * settings.TILE_SIZE + settings.TILE_SIZE / 2
-            y = r * settings.TILE_SIZE + settings.TILE_SIZE / 2
+            x = c * config.TILE_SIZE + config.TILE_SIZE / 2
+            y = r * config.TILE_SIZE + config.TILE_SIZE / 2
             
             m = MonsterSprite(data, x, y)
             self.all_sprites.add(m)
@@ -107,21 +115,28 @@ class Game:
 
     def run(self):
         """主游戏循环"""
-        # print("=== 游戏循环开始 ===")
-        # frame_count = 0
         while self.is_running:
             # (Spec I) 控制帧率，并获取 dt (增量时间)
-            self.dt = self.clock.tick(settings.FPS) / 1000.0
-            
-            # frame_count += 1
-            # if frame_count % 60 == 0:  # 每秒打印一次
-            #     print(f"游戏运行中... 帧数: {frame_count}")
+            self.dt = self.clock.tick(config.FPS) / 1000.0
             
             self.events()
             self.update()
             self.draw()
-        
-        # print("=== 游戏循环结束 ===")
+            
+            # # DEBUG: 如果已暂停，跳过更新和绘制
+            # if not self.paused:
+            #     self.update()
+            #     self.draw()
+            #     
+            #     # DEBUG: 第一帧渲染完成后暂停
+            #     if not self.first_frame_rendered:
+            #         self.first_frame_rendered = True
+            #         self.paused = True
+            #         print("\n" + "="*60)
+            #         print("DEBUG: 第一帧渲染完成，游戏已暂停")
+            #         print("窗口保持打开，请对比打印数据和显示图像")
+            #         print("关闭窗口可退出程序")
+            #         print("="*60 + "\n")
 
     def events(self):
         """处理所有输入事件"""
@@ -189,7 +204,7 @@ class Game:
     def draw(self):
         """渲染所有内容到屏幕"""
         
-        self.screen.fill(settings.COLOR_BLACK) # 清屏
+        self.screen.fill(config.COLOR_BLACK) # 清屏
         
         # 1. 绘制地图 (Spec V)
         drawing.draw_map(self.screen, self.city_map, self.camera, self.tile_images)
@@ -208,6 +223,9 @@ class Game:
         for bullet in self.bullets:
             # 子弹有自己的 image，可以直接 blit
             self.screen.blit(bullet.image, self.camera.apply_to_rect(bullet.rect))
+
+        # 绘制树木 (覆盖在实体之上，实现遮挡效果)
+        drawing.draw_trees(self.screen, self.city_map, self.camera, self.tile_images)
 
         # 3. 绘制 UI (Spec V) - (不跟随摄像机)
         drawing.draw_ui(self.screen, self.player.logic, self.current_day, self.font_main)

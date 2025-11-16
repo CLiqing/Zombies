@@ -1,9 +1,14 @@
 # monster_sprite.py
 import pygame
 import math
-import settings
-# 导入您提供的 monster_logic
-from monsters.monster_logic import Monster
+import sys
+import os
+
+# 添加父目录到路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+import config
+from systems.monsters.monster_logic import Monster
 
 class MonsterSprite(pygame.sprite.Sprite):
     """
@@ -44,18 +49,18 @@ class MonsterSprite(pygame.sprite.Sprite):
         skills = self.logic.elite_skills
 
         if t == 'Wanderer':
-            self.radius = settings.WANDERER_ELITE_RADIUS if e else settings.WANDERER_RADIUS
+            self.radius = config.WANDERER_ELITE_RADIUS if e else config.WANDERER_RADIUS
         
         elif t == 'Bucket':
-            self.radius = settings.BUCKET_ELITE_RADIUS if e else settings.BUCKET_RADIUS
+            self.radius = config.BUCKET_ELITE_RADIUS if e else config.BUCKET_RADIUS
         
         elif t == 'Ghoul':
             if e and '飞天' in skills:
-                self.width, self.height = settings.GHOUL_ELITE_FLYING_SIZE
+                self.width, self.height = config.GHOUL_ELITE_FLYING_SIZE
             elif e:
-                self.width, self.height = settings.GHOUL_ELITE_SIZE
+                self.width, self.height = config.GHOUL_ELITE_SIZE
             else:
-                self.width, self.height = settings.GHOUL_SIZE
+                self.width, self.height = config.GHOUL_SIZE
 
     def update(self, dt, player_pos, wall_sprites):
         # 简单的 AI：朝向玩家移动

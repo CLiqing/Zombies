@@ -15,7 +15,12 @@ GRID_STROKE = 1
 PANEL_GAP = 20  # 面板间的间距
 
 # --- 字体 ---
-FONT_PATH = "../assets/fonts/NotoSansSC-Regular.ttf"
+# 使用相对于项目根目录的路径
+_current_file = os.path.abspath(__file__)
+_src_dir = os.path.dirname(os.path.dirname(os.path.dirname(_current_file)))  # 到src目录
+_project_root = os.path.dirname(_src_dir)  # 到项目根目录
+FONT_PATH = os.path.join(_project_root, "assets", "fonts", "NotoSansSC-Regular.ttf")
+
 FONT_SIZE_MAIN = 18
 FONT_SIZE_SMALL = 14
 FONT_SIZE_AFFIX_MAIN = 17 # 主词条

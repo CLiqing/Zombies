@@ -4,10 +4,14 @@ import random
 import pygame
 import sys
 import math
+import os
+
+# 添加路径以便导入
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 try:
-    import config as cfg
-    from utils import generate_and_optimize_polyomino, get_bounding_box_dims
+    from systems.inventory import config as cfg
+    from systems.inventory.utils import generate_and_optimize_polyomino, get_bounding_box_dims
     
     if not hasattr(cfg, 'ceil_to_nearest_ten'):
          def ceil_to_nearest_ten(n):

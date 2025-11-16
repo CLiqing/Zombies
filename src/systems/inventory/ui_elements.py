@@ -1,12 +1,18 @@
 # ui_elements.py
 # 包含 GridPanel, Button, 和绘图辅助函数
 import pygame
-import sys # 确保导入 sys 用于错误处理
+import sys
+import os
+
+# 添加路径以便导入
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 try:
-    import config as cfg
+    from systems.inventory import config as cfg
 except ImportError:
     print("错误：ui_elements.py 无法导入 config.py。")
+    import traceback
+    traceback.print_exc()
     sys.exit()
 
 # --- 辅助函数 ---

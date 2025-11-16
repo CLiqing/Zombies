@@ -1,9 +1,15 @@
 # player.py
 import pygame
 import math
-import settings
-from inventory.player_stats import PlayerLogic # 导入您提供的模块
-from bullet import Bullet # 导入我们即将创建的 Bullet 类
+import sys
+import os
+
+# 添加父目录到路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+import config
+from systems.inventory.player_stats import PlayerLogic
+from entities.bullet import Bullet
 
 class Player(pygame.sprite.Sprite):
     """
@@ -20,7 +26,7 @@ class Player(pygame.sprite.Sprite):
         # 使用 Vector2 进行精确的浮点数位置计算
         self.pos = pygame.math.Vector2(world_pos_x, world_pos_y)
         self.vel = pygame.math.Vector2(0, 0)
-        self.radius = settings.PLAYER_RADIUS
+        self.radius = config.PLAYER_RADIUS
         
         # self.image 是 Pygame 碰撞检测的必需品
         # 我们使用一个透明的 surface，因为我们将自定义绘制
@@ -29,8 +35,8 @@ class Player(pygame.sprite.Sprite):
 
         # 3. 渲染 (Spec III)
         self.angle_rad = 0 # 玩家朝向 (弧度)
-        self.color = settings.COLOR_GREEN
-        self.facing_line_color = settings.COLOR_RED
+        self.color = config.COLOR_GREEN
+        self.facing_line_color = config.COLOR_RED
 
         # 4. 射击冷却
         self.last_shot_time = 0
@@ -130,6 +136,6 @@ class Player(pygame.sprite.Sprite):
         max_range = self.logic.total_stats.get("射程", 500) # 默认射程
         
         # 在玩家朝向的边缘生成子弹
-        start_pos = self.pos + dir_vec * (self.radius + settings.BULLET_RADIUS + 2)
+        start_pos = self.pos + dir_vec * (self.radius + config.BULLET_RADIUS + 2)
 
         return Bullet(start_pos, dir_vec, max_range)

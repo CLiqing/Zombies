@@ -19,7 +19,7 @@ class CityMap:
 
     def _parse_map(self):
         """解析 config 中的地图字符串，存储为二维列表 (行, 列)。"""
-        lines = config.MAP_40X40.split('\n')
+        lines = config.CITY_MAP.split('\n')
         
         # 移除空行并存储数据
         self._map_data = [list(line) for line in lines if line.strip()]

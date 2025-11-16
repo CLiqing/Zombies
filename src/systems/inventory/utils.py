@@ -4,10 +4,15 @@
 import random
 import math
 import numpy as np
+import sys
+import os
+
+# 添加路径以便导入
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # 注意：utils.py 必须能够导入 config
 try:
-    import config as cfg
+    from systems.inventory import config as cfg
 except ImportError:
     # 假设在实际运行环境中 config 是可用的
     # 如果 config 不可用，我们将使用默认值

@@ -2,13 +2,19 @@
 # 包含 InventoryScreen 类
 import pygame
 import sys
+import os
+
+# 添加路径以便导入
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 try:
-    import config as cfg
-    from ui_elements import GridPanel, Button, render_text, draw_tooltip, draw_context_menu
-    from player_stats import StatsPanelRenderer
+    from systems.inventory import config as cfg
+    from systems.inventory.ui_elements import GridPanel, Button, render_text, draw_tooltip, draw_context_menu
+    from systems.inventory.player_stats import StatsPanelRenderer
 except ImportError as e:
     print(f"错误：inventory_gui.py 导入失败: {e}")
+    import traceback
+    traceback.print_exc()
     sys.exit()
 
 class InventoryScreen:
@@ -76,7 +82,7 @@ class InventoryScreen:
         inv_h = cfg.INV_PANEL_ROWS * cfg.CELL_SIZE
         
         # Stats Panel Renderer 使用固定宽度
-        from player_stats import STAT_PANEL_FIXED_WIDTH, STAT_PANEL_FIXED_HEIGHT
+        from systems.inventory.player_stats import STAT_PANEL_FIXED_WIDTH, STAT_PANEL_FIXED_HEIGHT
         stats_w = STAT_PANEL_FIXED_WIDTH
         
         # 标题高度估计

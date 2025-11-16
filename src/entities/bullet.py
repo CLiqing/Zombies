@@ -1,6 +1,12 @@
 # bullet.py
 import pygame
-import settings
+import sys
+import os
+
+# 添加父目录到路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+import config
 
 class Bullet(pygame.sprite.Sprite):
     """
@@ -10,12 +16,12 @@ class Bullet(pygame.sprite.Sprite):
         super().__init__()
         
         self.pos = pygame.math.Vector2(start_pos_vec)
-        self.vel = direction_vec * settings.BULLET_SPEED
+        self.vel = direction_vec * config.BULLET_SPEED
         self.max_range = max_range
         self.distance_traveled = 0
         
-        self.radius = settings.BULLET_RADIUS
-        self.color = settings.BULLET_COLOR
+        self.radius = config.BULLET_RADIUS
+        self.color = config.BULLET_COLOR
 
         # Pygame 碰撞检测
         self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
