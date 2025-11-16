@@ -153,5 +153,5 @@ class CityMap:
         return spawn_points
 
     def is_slow_tile(self, r, c):
-        """检查地格是否为河流 (~)，对游荡者和铁桶有减速作用。"""
-        return self.get_tile(r, c) in config.SLOW_TILES
+        """检查地格是否为河流 (~)，仅食尸鬼可以通行。"""
+        return self.get_tile(r, c) in config.IS_RIVER

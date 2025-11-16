@@ -13,7 +13,7 @@ import sys
 import math
 
 try:
-    import config as cfg
+    import inventory.config as cfg
 except ImportError:
     print("错误：player_stats.py 无法导入 config.py。")
     sys.exit()
