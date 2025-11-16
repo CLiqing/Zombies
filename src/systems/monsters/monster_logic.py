@@ -69,7 +69,11 @@ class Monster:
         # 速度 (基础值)
         self.movement_speed = 1.0 
         if self.type == "Wanderer" and not self.is_elite:
-            self.movement_speed = 1.1 
+            self.movement_speed = 1.1
+        
+        # 攻击参数（从config导入）
+        self.attack_range = self._get_attack_range()
+        self.attack_cooldown = self._get_attack_cooldown() 
             
     def _init_skills(self):
         """初始化怪物独有的技能状态和属性"""
@@ -145,14 +149,140 @@ class Monster:
             info.append(f"尸爆({mcfg.MONSTER_SKILL_PARAMS['Bucket_Corpse_Explosion_HP_Dmg']*100:.0f}% MaxHP Dmg)")
         elif self.type == "Ghoul":
             info.append(f"闪避({mcfg.MONSTER_SKILL_PARAMS['Ghoul_Evade_Chance']*100:.0f}%)")
-            info.append(f"吸血光环({mcfg.MONSTER_SKILL_PARAMS['Ghoul_Lifesteal_Aura_Factor']*100:.1f}%)")
+            info.append(f"独狼(无视{mcfg.MONSTER_SKILL_PARAMS['Ghoul_Lone_Wolf_Armor_Ignore']*100:.0f}%护甲)")
         return ", ".join(info)
+    
+    def _get_attack_range(self):
+        """获取怪物的攻击范围"""
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        import config
+        return config.MONSTER_ATTACK_RANGE.get(self.type, 50)
+    
+    def _get_attack_cooldown(self):
+        """获取怪物的攻击冷却时间"""
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        import config
+        return config.MONSTER_ATTACK_COOLDOWN.get(self.type, 1.5)
+    
+    def can_attack(self, monster_world_pos, target_pos, current_time, last_attack_time):
+        """
+        判断怪物是否可以攻击目标
+        
+        Args:
+            monster_world_pos: 怪物的世界坐标 (x, y) 像素
+            target_pos: 目标位置 (x, y) 像素
+            current_time: 当前时间（秒）
+            last_attack_time: 上次攻击时间（秒）
+        
+        Returns:
+            bool: 是否可以攻击
+        """
+        if not self.is_alive:
+            return False
+        
+        # 检查冷却
+        if current_time - last_attack_time < self.attack_cooldown:
+            return False
+        
+        # 检查距离（使用世界坐标）
+        import math
+        dx = target_pos[0] - monster_world_pos[0]
+        dy = target_pos[1] - monster_world_pos[1]
+        distance = math.sqrt(dx*dx + dy*dy)
+        
+        return distance <= self.attack_range
+    
+    def calculate_damage(self, nearby_monsters):
+        """
+        计算怪物的实际攻击伤害（考虑光环效果）
+        
+        Args:
+            nearby_monsters: 附近的怪物列表 [(monster, distance), ...]
+        
+        Returns:
+            float: 实际伤害值
+        """
+        base_damage = self.damage
+        
+        # 游荡者：团结光环（附近每有一个游荡者，攻击力提升10%）
+        if self.type == "Wanderer":
+            wanderer_count = sum(1 for m, dist in nearby_monsters 
+                               if m.type == "Wanderer" and dist <= mcfg.MONSTER_SKILL_PARAMS["Wanderer_Aura_Range"])
+            if wanderer_count > 0:
+                bonus = wanderer_count * mcfg.MONSTER_SKILL_PARAMS["Wanderer_Aura_Factor"]
+                base_damage *= (1 + bonus)
+        
+        return base_damage
+    
+    def calculate_damage_with_cache(self, cached_aura_bonus):
+        """
+        使用缓存的光环加成计算伤害（性能优化版本）
+        
+        Args:
+            cached_aura_bonus: 预计算的光环加成比例（例如 0.2 表示 20%）
+        
+        Returns:
+            float: 实际伤害值
+        """
+        base_damage = self.damage
+        
+        # 直接应用缓存的加成
+        if cached_aura_bonus > 0:
+            base_damage *= (1 + cached_aura_bonus)
+        
+        return base_damage
+    
+    def perform_attack(self, target_pos, nearby_monsters):
+        """
+        执行攻击，返回攻击信息
+        
+        Args:
+            target_pos: 目标位置 (x, y)
+            nearby_monsters: 附近的怪物列表 [(monster, distance), ...]
+        
+        Returns:
+            dict: 攻击信息 {
+                'damage': 伤害值,
+                'type': 攻击类型 ('melee', 'aoe'),
+                'range': 攻击范围（AoE时使用）,
+                'position': 攻击位置,
+                'armor_ignore': 护甲穿透比例（食尸鬼独狼技能）
+            }
+        """
+        damage = self.calculate_damage(nearby_monsters)
+        
+        attack_info = {
+            'damage': damage,
+            'attacker_name': self.name,
+            'attacker_type': self.type,
+            'position': target_pos,
+            'armor_ignore': 0  # 默认无护甲穿透
+        }
+        
+        if self.type == "Bucket":
+            # 铁桶：AoE攻击
+            attack_info['type'] = 'aoe'
+            attack_info['range'] = self.attack_range
+        elif self.type == "Ghoul":
+            # 食尸鬼：近战攻击 + 独狼技能
+            attack_info['type'] = 'melee'
+            attack_info['armor_ignore'] = mcfg.MONSTER_SKILL_PARAMS['Ghoul_Lone_Wolf_Armor_Ignore']
+        else:
+            # 游荡者：近战攻击
+            attack_info['type'] = 'melee'
+        
+        return attack_info
 
 # --- 怪物生成核心函数 ---
 
 def generate_monsters(city_map, current_day):
     """
     根据天数和地图，随机生成怪物列表。
+    注意：允许多个怪物共享同一出生点。
     """
     a = current_day # 怪物等级 a
     

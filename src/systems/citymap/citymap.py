@@ -1,4 +1,3 @@
-# citymap.py
 from . import config
 import random
 
@@ -6,20 +5,26 @@ class CityMap:
     """
     负责加载、解析和管理游戏地图数据的类。
     """
-    def __init__(self):
+    def __init__(self, map_string=None):
         # 1. 初始化地图数据
         self._map_data = []
         self._width = 0
         self._height = 0
+        self._map_string = map_string  # 保存自定义地图字符串
         self._parse_map()
         
         # 2. 玩家位置 (初始为 None，待 _initialize_player_position 初始化)
         self._player_pos = None
         self._initialize_player_position()
 
+    # (略去 _parse_map, _initialize_player_position, 玩家位置管理方法)
+    # ... (保持原样)
+
     def _parse_map(self):
-        """解析 config 中的地图字符串，存储为二维列表 (行, 列)。"""
-        lines = config.CITY_MAP.split('\n')
+        """解析地图字符串，存储为二维列表 (行, 列)。"""
+        # 如果提供了自定义地图，使用自定义地图，否则使用 config 中的地图
+        map_data = self._map_string if self._map_string else config.CITY_MAP
+        lines = map_data.split('\n')
         
         # 移除空行并存储数据
         self._map_data = [list(line) for line in lines if line.strip()]
@@ -98,11 +103,21 @@ class CityMap:
         """检查坐标是否在地图范围内。"""
         return 0 <= r < self._height and 0 <= c < self._width
 
+    def _get_tile_or_wall(self, r, c):
+        """
+        获取指定坐标的地格符号。
+        如果坐标越界，则返回墙壁符号 '#' (实现边界按墙壁算)。
+        """
+        if self._is_valid_coordinate(r, c):
+            return self._map_data[r][c]
+        return '#' # 越界则算作墙壁
+
     # --- 僵尸出生点获取 ---
 
     def get_ghoul_spawn_points(self):
         """
         返回所有食尸鬼 (Ghoul) 的出生点列表 (S 地格)。
+        (保持原样，逻辑不变)
         """
         spawn_points = []
         for r in range(self._height):
@@ -113,40 +128,58 @@ class CityMap:
 
     def get_wanderer_spawn_points(self):
         """
-        返回所有游荡者 (Wanderer) 的潜在出生点 (墙体 #)。
-        返回: 所有墙体地格的坐标 (r, c)。
+        返回所有游荡者 (Wanderer) 的合法出生点。
+        合法出生点: 十字相邻的网格存在墙壁的空地网格。
         """
         spawn_points = []
+        # 十字相邻方向 (上, 下, 左, 右)
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)] 
+
         for r in range(self._height):
             for c in range(self._width):
-                # 仅考虑内部墙体，排除最外层边界
-                if self._map_data[r][c] in config.WANDERER_SPAWN_TILES and \
-                   0 < r < self._height - 1 and 0 < c < self._width - 1:
-                         spawn_points.append((r, c))
+                # 1. 必须是空地网格 (可通行地格)
+                if self.is_walkable(r, c):
+                    has_wall_neighbor = False
+                    
+                    # 2. 检查十字相邻的网格是否存在墙壁
+                    for dr, dc in directions:
+                        neighbor_tile = self._get_tile_or_wall(r + dr, c + dc)
+                        # 注意：边界越界时 _get_tile_or_wall 会返回 '#'，符合“边界按墙壁算”的逻辑
+                        if neighbor_tile == '#':
+                            has_wall_neighbor = True
+                            break
+                    
+                    if has_wall_neighbor:
+                        spawn_points.append((r, c))
+                        
         return spawn_points
 
     def get_bucket_spawn_points(self):
         """
-        返回铁桶 (Bucket) 的潜在出生点 (墙体 # 内部)。
-        实现逻辑: 限制在地图上半部分，且周围有密集墙体，模拟大型建筑内部。
+        返回铁桶 (Bucket) 的合法出生点。
+        合法出生点: 九宫格内有至少三格是墙壁的空地网格。
         """
         spawn_points = []
-        # 将搜索范围限制在地图上半部分
-        limit_r = self._height // 2 
         
-        for r in range(limit_r):
+        for r in range(self._height):
             for c in range(self._width):
-                if self._map_data[r][c] in config.BUCKET_SPAWN_TILES and \
-                   0 < r < self._height - 1 and 0 < c < self._width - 1:
-                        
-                    # 额外筛选：检查其周围 8 个地格中，是否有至少 3 个是墙体
+                # 1. 必须是空地网格 (可通行地格)
+                if self.is_walkable(r, c):
                     wall_neighbors = 0
+                    
+                    # 2. 检查九宫格 (3x3 区域)
                     for dr in [-1, 0, 1]:
                         for dc in [-1, 0, 1]:
-                            if dr == 0 and dc == 0: continue
-                            if self.get_tile(r + dr, c + dc) == '#':
+                            # 排除中心点自身，因为中心点已经是空地
+                            if dr == 0 and dc == 0: 
+                                continue
+                            
+                            neighbor_tile = self._get_tile_or_wall(r + dr, c + dc)
+                            # 注意：边界越界时 _get_tile_or_wall 会返回 '#'
+                            if neighbor_tile == '#':
                                 wall_neighbors += 1
                                 
+                    # 3. 满足至少三格是墙壁的条件
                     if wall_neighbors >= 3:
                         spawn_points.append((r, c))
                         

@@ -48,3 +48,34 @@ COLOR_DARK_GREEN = (0, 80, 0)       # 树木
 COLOR_BROWN = (100, 100, 100)       # 道路
 COLOR_LIGHT_GREY = (80, 80, 80)     # 下水道
 COLOR_DARK_BLUE = (0, 0, 150)       # 河流
+
+# VI. 怪物攻击参数
+# 攻击冷却时间（秒）
+MONSTER_ATTACK_COOLDOWN = {
+    "Wanderer": 1.5,
+    "Bucket": 2.5,
+    "Ghoul": 1.0
+}
+
+# 攻击范围（像素）
+MONSTER_ATTACK_RANGE = {
+    "Wanderer": 50,
+    "Bucket": 200,
+    "Ghoul": 30
+}
+
+# 后退参数
+MONSTER_KNOCKBACK_SPEED = 200  # 后退速度 px/s
+
+# 食尸鬼迅扑参数
+GHOUL_DASH_MIN_RANGE = 300
+GHOUL_DASH_MAX_RANGE = 500
+GHOUL_DASH_SPEED_MULT = 3.0  # 速度倍数
+GHOUL_DASH_ACCEL_TIME = 0.5  # 加速到最高速的时间
+
+# 铁桶圆环参数
+BUCKET_RING_THICKNESS = 2  # 圆环粗细
+
+# 尸爆参数
+CORPSE_EXPLOSION_DELAY = 0.5  # 尸爆延迟（秒）
+CORPSE_EXPLOSION_RANGE = 300  # 尸爆范围（像素）

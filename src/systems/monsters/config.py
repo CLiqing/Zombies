@@ -45,8 +45,7 @@ MONSTER_SKILL_PARAMS = {
     "Ghoul_Dash_Min_Range": 300,       # 迅扑触发最小范围 (px)
     "Ghoul_Dash_Max_Range": 500,       # 迅扑触发最大范围 (px)
     "Ghoul_Evade_Chance": 0.10,        # 闪避率 10%
-    "Ghoul_Lifesteal_Aura_Factor": 0.015, # 吸血光环：1.5% 吸血
-    "Ghoul_Lifesteal_Range": 150,
+    "Ghoul_Lone_Wolf_Armor_Ignore": 0.20, # 独狼：无视 20% 护甲
     "Ghoul_Elite_Crit_Chance": 0.15,   # 暴击率 15%
     "Ghoul_Elite_Crit_Dmg": 0.50,      # 暴击伤害 50%
 }

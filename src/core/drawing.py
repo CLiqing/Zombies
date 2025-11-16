@@ -346,3 +346,130 @@ def draw_minimap(surface, city_map, player, monsters_group, camera, minimap_font
         # 绘制箭头 (一个指向外侧的红色三角形)
         # 我们使用 angle_rad (dy, dx) 来确定方向
         _draw_rotated_triangle(surface, config.COLOR_RED, (arrow_pos_x, arrow_pos_y), 5, angle_rad)
+
+def draw_monster_attack_effects(surface, monsters, camera):
+    """
+    绘制怪物攻击特效（铁桶圆环）
+    """
+    for monster in monsters:
+        if monster.logic.type == 'Bucket' and monster.ring_radius > 0:
+            center_screen = camera.apply_to_coords(monster.pos.x, monster.pos.y)
+            radius = int(monster.ring_radius)
+            
+            if radius > 0:
+                # 铁桶的颜色（根据是否精英）
+                if monster.logic.is_elite:
+                    base_color = config.COLOR_ORANGE
+                else:
+                    base_color = config.COLOR_GREY
+                
+                # 创建半透明表面
+                ring_surface = pygame.Surface((radius*2+20, radius*2+20), pygame.SRCALPHA)
+                
+                # 填充半透明圆盘（主体）
+                fill_alpha = int(80)  # 约30%透明度
+                if monster.logic.is_elite:
+                    fill_color = (255, 200, 150, fill_alpha)
+                else:
+                    fill_color = (180, 180, 180, fill_alpha)
+                pygame.draw.circle(ring_surface, fill_color, 
+                                 (radius+10, radius+10), radius)
+                
+                # 绘制外圈光晕效果（3层渐变）
+                for i in range(3):
+                    # 从内到外，透明度递减
+                    alpha = int(60 * (1 - i * 0.3))
+                    offset = i * 6
+                    
+                    # 浅橙色/浅灰色
+                    if monster.logic.is_elite:
+                        color = (255, 220, 180, alpha)
+                    else:
+                        color = (200, 200, 200, alpha)
+                    
+                    if radius + offset > 0:
+                        pygame.draw.circle(ring_surface, color, 
+                                         (radius+10, radius+10), 
+                                         radius + offset, 6)
+                
+                # Blit到屏幕
+                blit_pos = (center_screen[0] - radius - 10, center_screen[1] - radius - 10)
+                surface.blit(ring_surface, blit_pos)
+
+def draw_corpse_explosions(surface, explosions, camera):
+    """
+    绘制尸爆效果
+    """
+    for explosion in explosions:
+        if explosion.is_exploding:
+            center_screen = camera.apply_to_coords(explosion.pos.x, explosion.pos.y)
+            radius = int(explosion.current_radius)
+            
+            if radius > 0:
+                # 红色爆炸圈，半透明
+                explosion_surface = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
+                alpha = int(255 * (1.0 - explosion.explosion_progress))  # 逐渐变透明
+                color_with_alpha = (255, 100, 0, alpha)
+                pygame.draw.circle(explosion_surface, color_with_alpha, (radius, radius), radius, 3)
+                
+                # Blit到屏幕
+                blit_pos = (center_screen[0] - radius, center_screen[1] - radius)
+                surface.blit(explosion_surface, blit_pos)
+        else:
+            # 延迟阶段：在尸体位置闪烁警告
+            if int(explosion.timer * 4) % 2 == 0:  # 每0.25秒闪烁
+                center_screen = camera.apply_to_coords(explosion.pos.x, explosion.pos.y)
+                pygame.draw.circle(surface, (255, 200, 0), center_screen, 10, 2)
+
+def draw_game_over_ui(surface, game):
+    """
+    绘制Game Over界面
+    """
+    # 绘制半透明灰色遮罩
+    overlay = pygame.Surface((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
+    overlay.fill((50, 50, 50))
+    overlay.set_alpha(200)
+    surface.blit(overlay, (0, 0))
+    
+    # Game Over 文字（使用系统字体支持中文）
+    try:
+        font_large = pygame.font.SysFont('microsoftyahei,simsun,simhei,arial', 72, bold=True)
+        font_medium = pygame.font.SysFont('microsoftyahei,simsun,simhei,arial', 36)
+    except:
+        font_large = pygame.font.Font(None, 72)
+        font_medium = pygame.font.Font(None, 36)
+    
+    text = font_large.render("GAME OVER", True, config.COLOR_RED)
+    text_rect = text.get_rect(center=(config.SCREEN_WIDTH // 2, config.SCREEN_HEIGHT // 3))
+    surface.blit(text, text_rect)
+    
+    # 统计信息
+    day_text = font_medium.render(f"存活天数: {game.current_day}", True, config.COLOR_WHITE)
+    day_rect = day_text.get_rect(center=(config.SCREEN_WIDTH // 2, config.SCREEN_HEIGHT // 2 - 20))
+    surface.blit(day_text, day_rect)
+    
+    # 按钮
+    button_y = config.SCREEN_HEIGHT // 2 + 80
+    button_width = 180
+    button_height = 50
+    button_spacing = 40
+    
+    # 从头开始按钮
+    restart_x = config.SCREEN_WIDTH // 2 - button_width - button_spacing // 2
+    restart_rect = pygame.Rect(restart_x, button_y, button_width, button_height)
+    pygame.draw.rect(surface, config.COLOR_GREEN, restart_rect)
+    pygame.draw.rect(surface, config.COLOR_WHITE, restart_rect, 2)
+    restart_text = font_medium.render("从头开始", True, config.COLOR_BLACK)
+    restart_text_rect = restart_text.get_rect(center=restart_rect.center)
+    surface.blit(restart_text, restart_text_rect)
+    game.restart_button_rect = restart_rect  # 保存按钮位置供点击检测
+    
+    # 回到上一天按钮
+    retry_x = config.SCREEN_WIDTH // 2 + button_spacing // 2
+    retry_rect = pygame.Rect(retry_x, button_y, button_width, button_height)
+    pygame.draw.rect(surface, config.COLOR_BLUE, retry_rect)
+    pygame.draw.rect(surface, config.COLOR_WHITE, retry_rect, 2)
+    retry_text = font_medium.render("回到上一天", True, config.COLOR_WHITE)
+    retry_text_rect = retry_text.get_rect(center=retry_rect.center)
+    surface.blit(retry_text, retry_text_rect)
+    game.retry_button_rect = retry_rect  # 保存按钮位置供点击检测

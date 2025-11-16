@@ -40,6 +40,9 @@ class Player(pygame.sprite.Sprite):
 
         # 4. 射击冷却
         self.last_shot_time = 0
+        
+        # 5. 受伤状态
+        self.is_dead = False
 
     def update(self, dt, mouse_world_pos, wall_sprites):
         self._get_input()
@@ -139,3 +142,55 @@ class Player(pygame.sprite.Sprite):
         start_pos = self.pos + dir_vec * (self.radius + config.BULLET_RADIUS + 2)
 
         return Bullet(start_pos, dir_vec, max_range)
+    
+    def take_damage(self, damage, damage_source="未知", armor_ignore=0):
+        """
+        玩家受到伤害
+        
+        Args:
+            damage: 基础伤害值
+            damage_source: 伤害来源（用于日志）
+            armor_ignore: 护甲穿透比例（0-1），攻击者无视的护甲百分比
+        
+        Returns:
+            float: 实际受到的伤害
+        """
+        if self.is_dead:
+            return 0
+        
+        # 获取玩家护甲
+        base_armor = self.logic.total_stats.get("护甲", 0)
+        
+        # 应用护甲穿透：实际护甲 = 基础护甲 × (1 - 穿透比例)
+        effective_armor = base_armor * (1 - armor_ignore)
+        
+        # 从player_stats.py导入护甲常数
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'systems', 'inventory'))
+        from systems.inventory import config as inv_cfg
+        armor_const = getattr(inv_cfg, 'ARMOR_CONSTANT', 100)
+        
+        # 计算伤害减免：DR = Armor / (Armor + K)
+        dr = effective_armor / (effective_armor + armor_const) if (effective_armor + armor_const) > 0 else 0
+        
+        # 计算实际伤害
+        actual_damage = damage * (1 - dr)
+        
+        # 扣除生命值
+        self.logic.current_health -= actual_damage
+        
+        # 日志输出
+        # if armor_ignore > 0:
+        #     print(f"玩家受到 {actual_damage:.1f} 点伤害（原始伤害：{damage:.1f}，护甲：{base_armor:.0f}→{effective_armor:.0f}（穿透{armor_ignore*100:.0f}%），减伤：{dr*100:.1f}%）- 来源：{damage_source}")
+        # else:
+        #     print(f"玩家受到 {actual_damage:.1f} 点伤害（原始伤害：{damage:.1f}，护甲减伤：{dr*100:.1f}%）- 来源：{damage_source}")
+        # print(f"当前生命值：{self.logic.current_health:.1f} / {self.logic.total_stats.get('生命', 0):.1f}")
+        
+        # 检查死亡
+        if self.logic.current_health <= 0:
+            self.logic.current_health = 0
+            self.is_dead = True
+            print("玩家死亡！")
+        
+        return actual_damage

@@ -87,6 +87,9 @@ class PlayerLogic:
         stats["护甲穿透"] = bonus.get("护甲穿透", 0)
         stats["射程"] = self.base_stats["基础射程"] + bonus.get("射程", 0)
         
+        # 穿透数（初始值为0，表示子弹可以穿过几个敌人）
+        stats["穿透数"] = max(0, int(self.base_stats.get("基础穿透数", 0) + bonus.get("穿透数", 0)))
+        
         # --- 3. 移动速度计算 ---
         stats["移速"] = self.base_stats["基础移速"] * (1 + bonus.get("移速%", 0))
         
@@ -194,7 +197,12 @@ class StatsPanelRenderer:
             elif name == "护甲穿透":
                 val_str = f"{stats.get('护甲穿透', 0):.2%}" # **[修改] 属性名**
             elif name == "射程":
-                val_str = f"{int(stats.get('射程', 0))}"
+                range_val = int(stats.get('射程', 0))
+                pierce_val = int(stats.get('穿透数', 0))
+                if pierce_val > 0:
+                    val_str = f"{range_val} (可穿透{pierce_val}名敌人)"
+                else:
+                    val_str = f"{range_val}"
             
             val_text = render_text(font, val_str, val_color)
             surface.blit(val_text, (content_start_x + 120, y))
