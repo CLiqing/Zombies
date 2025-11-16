@@ -140,8 +140,11 @@ class Player(pygame.sprite.Sprite):
         
         # 在玩家朝向的边缘生成子弹
         start_pos = self.pos + dir_vec * (self.radius + config.BULLET_RADIUS + 2)
+        
+        # TODO: 测试用可命中目标数为2，正式游戏从属性获取：self.logic.total_stats.get("穿透", 1) + 1
+        hit_count = 2  # 测试用（可以穿透击中2个目标）
 
-        return Bullet(start_pos, dir_vec, max_range)
+        return Bullet(start_pos, dir_vec, max_range, hit_count)
     
     def take_damage(self, damage, damage_source="未知", armor_ignore=0):
         """
@@ -180,12 +183,17 @@ class Player(pygame.sprite.Sprite):
         # 扣除生命值
         self.logic.current_health -= actual_damage
         
-        # 日志输出
-        # if armor_ignore > 0:
-        #     print(f"玩家受到 {actual_damage:.1f} 点伤害（原始伤害：{damage:.1f}，护甲：{base_armor:.0f}→{effective_armor:.0f}（穿透{armor_ignore*100:.0f}%），减伤：{dr*100:.1f}%）- 来源：{damage_source}")
-        # else:
-        #     print(f"玩家受到 {actual_damage:.1f} 点伤害（原始伤害：{damage:.1f}，护甲减伤：{dr*100:.1f}%）- 来源：{damage_source}")
-        # print(f"当前生命值：{self.logic.current_health:.1f} / {self.logic.total_stats.get('生命', 0):.1f}")
+        # Debug日志输出
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        import config as game_config
+        if game_config.DEBUG_COMBAT_LOG:
+            if armor_ignore > 0:
+                print(f"[COMBAT] 玩家受到 {actual_damage:.1f} 点伤害（原始伤害：{damage:.1f}，护甲：{base_armor:.0f}→{effective_armor:.0f}（穿透{armor_ignore*100:.0f}%），减伤：{dr*100:.1f}%）- 来源：{damage_source}", flush=True)
+            else:
+                print(f"[COMBAT] 玩家受到 {actual_damage:.1f} 点伤害（原始伤害：{damage:.1f}，护甲减伤：{dr*100:.1f}%）- 来源：{damage_source}", flush=True)
+            print(f"[COMBAT] 玩家当前生命值：{self.logic.current_health:.1f} / {self.logic.total_stats.get('生命', 0):.1f}", flush=True)
         
         # 检查死亡
         if self.logic.current_health <= 0:

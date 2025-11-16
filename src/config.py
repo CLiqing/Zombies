@@ -1,6 +1,9 @@
 # settings.py
 import pygame
 
+# Debug 配置
+DEBUG_COMBAT_LOG = True  # 是否打印战斗日志（攻击、伤害、格挡、闪避等）
+
 # I. 核心配置与初始化 (来自设计说明)
 SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 675

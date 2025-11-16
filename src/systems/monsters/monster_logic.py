@@ -36,6 +36,12 @@ class Monster:
         self.current_hp = self.max_hp
         self.is_alive = True
         self.is_reviving = False
+        self.revive_timer = 0
+        self.has_revived = False  # 游荡者只能复活一次
+        
+        # 防御技能冷却
+        self.last_block_time = -999  # 铁桶格挡冷却
+        self.cached_armor_bonus = 0  # 铁甲光环缓存的护甲加成
         
     def _get_display_name(self):
         """返回更友好的名称"""
@@ -276,6 +282,97 @@ class Monster:
             attack_info['type'] = 'melee'
         
         return attack_info
+    
+    def take_damage(self, damage, damage_source="未知"):
+        """
+        怪物受到伤害，触发防御技能判定
+        
+        Args:
+            damage: 基础伤害值
+            damage_source: 伤害来源
+        
+        Returns:
+            dict: {
+                'blocked': bool,  # 是否被格挡
+                'evaded': bool,   # 是否被闪避
+                'actual_damage': float,  # 实际伤害
+                'died': bool,  # 是否死亡
+                'will_revive': bool  # 是否会复活
+            }
+        """
+        if not self.is_alive or self.is_reviving:
+            return {
+                'blocked': False,
+                'evaded': False,
+                'actual_damage': 0,
+                'died': False,
+                'will_revive': False
+            }
+        
+        import random
+        import pygame
+        
+        blocked = False
+        evaded = False
+        actual_damage = damage
+        current_time = pygame.time.get_ticks() / 1000.0
+        
+        # 铁桶：格挡判定
+        if self.type == "Bucket":
+            block_cd = mcfg.MONSTER_SKILL_PARAMS['Bucket_Block_Cooldown']
+            if current_time - self.last_block_time >= block_cd:
+                block_chance = mcfg.MONSTER_SKILL_PARAMS['Bucket_Block_Chance']
+                if random.random() < block_chance:
+                    blocked = True
+                    self.last_block_time = current_time
+                    reduction = mcfg.MONSTER_SKILL_PARAMS['Bucket_Block_Reduction']
+                    actual_damage *= (1 - reduction)  # 减少90%伤害
+        
+        # 食尸鬼：闪避判定
+        if self.type == "Ghoul" and not blocked:
+            evade_chance = mcfg.MONSTER_SKILL_PARAMS['Ghoul_Evade_Chance']
+            if random.random() < evade_chance:
+                evaded = True
+                actual_damage = 0  # 完全闪避
+        
+        # 扣除生命值
+        self.current_hp -= actual_damage
+        
+        # Debug日志
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+        import config as game_config
+        if game_config.DEBUG_COMBAT_LOG:
+            if blocked:
+                print(f"[COMBAT] {self.name} 格挡！受到 {actual_damage:.1f} 伤害（原始：{damage:.1f}，减免90%）- HP: {self.current_hp:.1f}/{self.max_hp}", flush=True)
+            elif evaded:
+                print(f"[COMBAT] {self.name} 闪避！完全躲开攻击 - HP: {self.current_hp:.1f}/{self.max_hp}", flush=True)
+            else:
+                print(f"[COMBAT] {self.name} 受到 {actual_damage:.1f} 伤害 - HP: {self.current_hp:.1f}/{self.max_hp}", flush=True)
+        
+        # 判定死亡
+        died = False
+        will_revive = False
+        if self.current_hp <= 0:
+            self.current_hp = 0
+            self.is_alive = False
+            died = True
+            
+            # 游荡者：复活判定
+            if self.type == "Wanderer" and not self.has_revived:
+                will_revive = True
+                self.is_reviving = True
+                self.revive_timer = mcfg.MONSTER_SKILL_PARAMS['Wanderer_Revive_Delay']
+                self.has_revived = True  # 标记已使用复活
+        
+        return {
+            'blocked': blocked,
+            'evaded': evaded,
+            'actual_damage': actual_damage,
+            'died': died,
+            'will_revive': will_revive
+        }
 
 # --- 怪物生成核心函数 ---
 

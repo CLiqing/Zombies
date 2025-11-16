@@ -156,6 +156,11 @@ def draw_player(surface, player, camera):
 def draw_monster(surface, monster_sprite, camera):
     """(Spec III) 根据怪物类型和精英状态绘制图案"""
     logic = monster_sprite.logic
+    
+    # 只有非游荡者在复活时才跳过渲染
+    if logic.is_reviving and logic.type != 'Wanderer':
+        return
+    
     screen_x, screen_y = camera.apply_to_coords(monster_sprite.pos.x, monster_sprite.pos.y)
     screen_pos = (int(screen_x), int(screen_y))
     angle_rad = monster_sprite.angle_rad
@@ -166,7 +171,11 @@ def draw_monster(surface, monster_sprite, camera):
 
     if t == 'Wanderer':
         r = monster_sprite.radius
-        color = config.COLOR_WHITE # 假设游荡者是白色
+        # 浅蓝色（活着），灰色（复活中的尸体）
+        if logic.is_reviving:
+            color = config.COLOR_GREY  # 尸体
+        else:
+            color = (100, 200, 255)  # 浅蓝色
         _draw_rotated_triangle(surface, color, screen_pos, r, angle_rad)
         
     elif t == 'Bucket':

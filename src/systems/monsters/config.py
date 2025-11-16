@@ -32,10 +32,12 @@ MONSTER_SKILL_PARAMS = {
     "Wanderer_Elite_Spawn_Max": 3,     # 每次召唤数量
     
     # 铁桶 (Bucket)
-    "Bucket_Block_Chance": 0.15,       # 概率格挡 15%
-    "Bucket_Block_Reduction": 0.50,    # 格挡 50% 伤害
+    "Bucket_Block_Chance": 0.15,       # 格挡概率 15%
+    "Bucket_Block_Reduction": 0.90,    # 格挡时减少90%伤害（只承受10%）
+    "Bucket_Block_Cooldown": 1.0,      # 格挡冷却时间 1秒
+    "Bucket_Armor_Aura": 10,           # 铁甲光环：每个铁桶提供+10护甲
+    "Bucket_Armor_Aura_Range": 200,    # 铁甲光环范围 (px)
     "Bucket_AOE_Range": 100,           # AoE 攻击范围 (px)
-    "Bucket_Armor_Aura_Factor": 0.15,  # 护甲光环：自身基础护甲的 15%
     "Bucket_Corpse_Explosion_HP_Dmg": 0.05, # 尸爆：最大生命值 5% 伤害
     "Bucket_Corpse_Explosion_Range": 300,   # 尸爆范围 (px)
     "Bucket_Giant_HP_Threshold": 0.20, # 巨人：每减少 20% HP
@@ -44,7 +46,7 @@ MONSTER_SKILL_PARAMS = {
     # 食尸鬼 (Ghoul)
     "Ghoul_Dash_Min_Range": 300,       # 迅扑触发最小范围 (px)
     "Ghoul_Dash_Max_Range": 500,       # 迅扑触发最大范围 (px)
-    "Ghoul_Evade_Chance": 0.10,        # 闪避率 10%
+    "Ghoul_Evade_Chance": 0.20,        # 闪避率 20%
     "Ghoul_Lone_Wolf_Armor_Ignore": 0.20, # 独狼：无视 20% 护甲
     "Ghoul_Elite_Crit_Chance": 0.15,   # 暴击率 15%
     "Ghoul_Elite_Crit_Dmg": 0.50,      # 暴击伤害 50%

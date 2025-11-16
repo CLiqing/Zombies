@@ -105,6 +105,10 @@ class MonsterSprite(pygame.sprite.Sprite):
         """更新怪物AI和位置"""
         import random
         
+        # 游荡者复活期间不移动
+        if self.logic.is_reviving:
+            return
+        
         # 处理后退硬直状态
         if self.attack_state == 'knockback':
             self._update_knockback(dt, wall_sprites)
@@ -344,7 +348,13 @@ class MonsterSprite(pygame.sprite.Sprite):
         # 性能优化：使用缓存的光环加成计算伤害（所有怪物类型）
         attack_info['damage'] = self.logic.calculate_damage_with_cache(self.cached_aura_bonus)
         
-        # print(f"{self.logic.name} 发动了攻击！")
+        # Debug日志
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        import config
+        if config.DEBUG_COMBAT_LOG:
+            print(f"[COMBAT] {self.logic.name} 发动攻击！伤害: {attack_info['damage']:.1f}", flush=True)
         
         # 根据怪物类型处理攻击后动作
         if self.logic.type == 'Bucket':

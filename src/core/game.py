@@ -31,6 +31,7 @@ class CorpseExplosion:
         self.explosion_progress = 0  # 爆炸进度 0-1
         self.current_radius = 0  # 当前半径
         self.finished = False  # 是否完成
+        self.has_damaged = False  # 是否已造成伤害
     
     def update(self, dt):
         """更新尸爆状态"""
@@ -77,6 +78,7 @@ class Game:
         self.game_over = False  # 游戏结束标志
         self.corpse_explosions = []  # 尸爆效果列表
         self.active_bucket_rings = []  # 活跃的铁桶圆环列表（性能优化）
+        self.floating_texts = []  # 浮动文字列表（BLOCK、MISS等）
         
         # 保存自定义地图和怪物生成函数
         self.custom_map = custom_map
@@ -265,6 +267,25 @@ class Game:
         self.monsters.update(self.dt, self.player.pos, self.walls)
         self.bullets.update(self.dt)
         
+        # 2.5. 更新浮动文字
+        from entities.floating_text import FloatingText
+        for text in self.floating_texts[:]:
+            text.update(self.dt)
+            if text.finished:
+                self.floating_texts.remove(text)
+        
+        # 2.6. 更新游荡者复活倒计时
+        for monster in self.monsters:
+            if monster.logic.is_reviving:
+                monster.logic.revive_timer -= self.dt
+                if monster.logic.revive_timer <= 0:
+                    # 复活！
+                    monster.logic.is_reviving = False
+                    monster.logic.is_alive = True
+                    monster.logic.current_hp = monster.logic.max_hp
+                    if config.DEBUG_COMBAT_LOG:
+                        print(f"[COMBAT] {monster.logic.name} 复活了！HP: {monster.logic.current_hp:.1f}/{monster.logic.max_hp}", flush=True)
+        
         # 3. 更新摄像机 (Spec II)
         self.camera.update(self.player)
         
@@ -272,12 +293,12 @@ class Game:
         for explosion in self.corpse_explosions[:]:
             explosion.update(self.dt)
             # 爆炸时检查玩家是否在范围内
-            if explosion.is_exploding and not explosion.finished:
+            if explosion.is_exploding and not explosion.finished and not explosion.has_damaged:
                 dist = self.player.pos.distance_to(explosion.pos)
                 if dist <= explosion.current_radius and not self.player.is_dead:
-                    # 只在刚开始爆炸时造成一次伤害
-                    if explosion.explosion_progress < 0.1:  # 避免重复伤害
-                        self.player.take_damage(explosion.damage, f"{explosion.monster_name}的尸爆")
+                    # 使用has_damaged标志确保伤害只造成一次
+                    self.player.take_damage(explosion.damage, f"{explosion.monster_name}的尸爆")
+                    explosion.has_damaged = True
             
             # 移除完成的爆炸
             if explosion.finished:
@@ -326,36 +347,72 @@ class Game:
         
         # 6. 碰撞检测 (Spec IV)
         
-        # 子弹 vs 怪物
-        # groupcollide: 检查两组，True/True 表示碰撞后双方都销毁
-        # (Spec IV) 子弹碰撞怪物后，子弹销毁
-        hits = pygame.sprite.groupcollide(self.monsters, self.bullets, False, True)
-        for monster_hit in hits:
-            # (Spec IV) 伤害判定
-            # (简化：造成玩家 '攻击力' 属性的伤害)
-            damage = self.player.logic.total_stats.get("攻击力", 10)
+        # 子弹 vs 怪物 (使用穿透机制)
+        from entities.floating_text import FloatingText
+        hits = pygame.sprite.groupcollide(self.monsters, self.bullets, False, False)
+        
+        for monster_hit, bullets in hits.items():
+            # 跳过正在复活的游荡者
+            if monster_hit.logic.is_reviving:
+                continue
             
-            # (TODO: 在 monster_logic.py 中添加 take_damage 方法)
-            monster_hit.logic.current_hp -= damage
-            
-            if monster_hit.logic.current_hp <= 0:
-                monster_hit.logic.is_alive = False
+            for bullet in bullets:
+                # 检查这个子弹是否已经命中过这个怪物（跨帧检查）
+                if monster_hit in bullet.hit_monsters:
+                    continue  # 已经命中过，跳过
                 
-                # 铁桶死亡触发尸爆
-                if monster_hit.logic.type == 'Bucket':
-                    from systems.monsters import config as mcfg
-                    explosion_damage = monster_hit.logic.max_hp * mcfg.MONSTER_SKILL_PARAMS['Bucket_Corpse_Explosion_HP_Dmg']
-                    explosion = CorpseExplosion(
-                        monster_hit.pos.copy(),
-                        config.CORPSE_EXPLOSION_RANGE,
-                        config.CORPSE_EXPLOSION_DELAY,
-                        explosion_damage,
-                        monster_hit.logic.name
-                    )
-                    self.corpse_explosions.append(explosion)
-                    print(f"{monster_hit.logic.name} 死亡，将在{config.CORPSE_EXPLOSION_DELAY}秒后爆炸")
+                # 记录命中
+                bullet.hit_monsters.add(monster_hit)
                 
-                monster_hit.kill() # 从所有组中移除
+                # 获取玩家攻击力
+                damage = self.player.logic.total_stats.get("攻击力", 10)
+                
+                # 调用怪物受伤方法
+                result = monster_hit.logic.take_damage(damage, "玩家")
+                
+                # 处理格挡
+                if result['blocked']:
+                    text_pos = (monster_hit.pos.x, monster_hit.pos.y - 30)
+                    text = FloatingText("BLOCK", text_pos, (255, 255, 0), 1.0, 24)  # 黄色
+                    self.floating_texts.append(text)
+                
+                # 处理闪避
+                if result['evaded']:
+                    text_pos = (monster_hit.pos.x, monster_hit.pos.y - 30)
+                    text = FloatingText("MISS", text_pos, (255, 255, 255), 1.0, 24)  # 白色
+                    self.floating_texts.append(text)
+                
+                # 处理死亡
+                if result['died']:
+                    # 铁桶死亡触发尸爆
+                    if monster_hit.logic.type == 'Bucket':
+                        from systems.monsters import config as mcfg
+                        explosion_damage = monster_hit.logic.max_hp * mcfg.MONSTER_SKILL_PARAMS['Bucket_Corpse_Explosion_HP_Dmg']
+                        explosion = CorpseExplosion(
+                            monster_hit.pos.copy(),
+                            config.CORPSE_EXPLOSION_RANGE,
+                            config.CORPSE_EXPLOSION_DELAY,
+                            explosion_damage,
+                            monster_hit.logic.name
+                        )
+                        self.corpse_explosions.append(explosion)
+                    
+                    # 游荡者复活：不立即移除
+                    if not result['will_revive']:
+                        monster_hit.kill()  # 从所有组中移除
+                
+                # 处理子弹命中计数
+                if result['evaded']:
+                    # 闪避：不消耗命中次数，子弹继续飞行
+                    pass
+                elif result['blocked']:
+                    # 格挡：不消耗命中次数，子弹继续飞行
+                    pass
+                else:
+                    # 实际命中：消耗1次命中次数
+                    bullet.hit_count -= 1
+                    if bullet.hit_count <= 0:
+                        bullet.kill()  # 命中次数耗尽，销毁子弹
         
         # 7. 检查玩家死亡
         if self.player.is_dead and not self.game_over:
@@ -369,14 +426,17 @@ class Game:
     
     def _precalculate_auras(self):
         """性能优化：预计算所有怪物的光环加成（每帧一次）"""
-        # 为每个游荡者计算团结光环加成
+        from systems.monsters import config as mcfg
+        
+        # 为每个怪物计算光环加成
         for monster in self.monsters:
             if not monster.logic.is_alive:
                 monster.cached_aura_bonus = 0
+                monster.logic.cached_armor_bonus = 0
                 continue
                 
             if monster.logic.type == 'Wanderer':
-                # 计算200px内的其他游荡者数量
+                # 团结光环：计算200px内的其他游荡者数量
                 wanderer_count = 0
                 for m in self.monsters:
                     if (m != monster and m.logic.is_alive and 
@@ -388,10 +448,26 @@ class Game:
                         if dist_sq <= 200 * 200:  # 200px范围
                             wanderer_count += 1
                 
-                # 每个附近游荡者提供10%加成
+                # 每个附近游荡者提供10%攻击加成
                 monster.cached_aura_bonus = wanderer_count * 0.1
             else:
                 monster.cached_aura_bonus = 0
+            
+            # 铁甲光环：计算200px内的所有铁桶数量（包括自己）
+            armor_aura_range = mcfg.MONSTER_SKILL_PARAMS['Bucket_Armor_Aura_Range']
+            armor_per_bucket = mcfg.MONSTER_SKILL_PARAMS['Bucket_Armor_Aura']
+            bucket_count = 0
+            
+            for m in self.monsters:
+                if m.logic.is_alive and m.logic.type == 'Bucket':
+                    dx = monster.pos.x - m.pos.x
+                    dy = monster.pos.y - m.pos.y
+                    dist_sq = dx * dx + dy * dy
+                    if dist_sq <= armor_aura_range * armor_aura_range:
+                        bucket_count += 1
+            
+            # 每个附近铁桶提供+10护甲
+            monster.logic.cached_armor_bonus = bucket_count * armor_per_bucket
     
     def _handle_monster_attack(self, attack_info):
         """处理怪物攻击"""
@@ -442,6 +518,15 @@ class Game:
         
         # 绘制尸爆效果
         drawing.draw_corpse_explosions(self.screen, self.corpse_explosions, self.camera)
+        
+        # 绘制浮动文字（BLOCK、MISS等）
+        for text in self.floating_texts:
+            screen_x, screen_y = self.camera.apply_to_coords(text.pos.x, text.pos.y)
+            # 应用透明度
+            alpha = text.get_alpha()
+            if alpha < 255:
+                text.surface.set_alpha(alpha)
+            self.screen.blit(text.surface, (screen_x - text.rect.width // 2, screen_y - text.rect.height // 2))
 
         # 3. 绘制 UI (Spec V) - (不跟随摄像机)
         drawing.draw_ui(self.screen, self.player.logic, self.current_day, self.font_main)
