@@ -15,6 +15,7 @@ from systems.citymap.citymap import CityMap
 from entities.player import Player
 from entities.bullet import Bullet
 from entities.monster_sprite import MonsterSprite
+from entities.floating_text import FloatingText
 from systems.monsters.monster_logic import generate_monsters
 from core.camera import Camera
 
@@ -73,6 +74,9 @@ class Game:
         self.font_main = pygame.font.Font(None, 24) # 用于 UI
         self.font_minimap = pygame.font.Font(None, 16) # 用于小地图
         
+        # 加载精灵图像
+        self.sprite_images = self._load_sprite_images()
+        
         # 游戏状态
         self.current_day = 1
         self.game_over = False  # 游戏结束标志
@@ -89,6 +93,33 @@ class Game:
         # self.paused = False
         
         self.load_data()
+
+    def _load_sprite_images(self):
+        """加载精灵图片资源，返回名称->Surface字典（如果找不到文件则返回空字典）
+
+        加载目录: project_root/assets/sprites
+        键使用文件名（不含扩展名），例如 'player', 'wanderer', 'bucket-烈爆'。
+        """
+        sprites = {}
+        # assets 位于工程根目录下（src/core -> src -> project root），因此向上两级到达项目根
+        sprites_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'sprites')
+        sprites_dir = os.path.normpath(sprites_dir)
+
+        if os.path.isdir(sprites_dir):
+            for fname in os.listdir(sprites_dir):
+                if not fname.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    continue
+                key = os.path.splitext(fname)[0]
+                path = os.path.join(sprites_dir, fname)
+                try:
+                    img = pygame.image.load(path).convert_alpha()
+                    sprites[key] = img
+                except Exception as e:
+                    print(f"Warning: failed to load sprite '{path}': {e}")
+        else:
+            print(f"Warning: sprites directory not found: {sprites_dir}")
+
+        return sprites
 
     def load_data(self):
         """加载所有游戏资源和初始状态"""
@@ -286,6 +317,46 @@ class Game:
                     if config.DEBUG_COMBAT_LOG:
                         print(f"[COMBAT] {monster.logic.name} 复活了！HP: {monster.logic.current_hp:.1f}/{monster.logic.max_hp}", flush=True)
         
+        # 2.7. 更新精英技能状态
+        current_time = pygame.time.get_ticks() / 1000.0
+        for monster in self.monsters:
+            # 呼唤者：检查是否可以召唤
+            if hasattr(monster.logic, 'elite_type') and monster.logic.elite_type == 'summoner':
+                if monster.logic.can_summon(current_time) and len(self.monsters) < 500:
+                    # 检查玩家是否在威胁范围内
+                    from systems.monsters import config as mcfg
+                    threat_range = mcfg.MONSTER_SKILL_PARAMS['Wanderer_Summoner_Range']
+                    dist = monster.pos.distance_to(self.player.pos)
+                    if dist <= threat_range:
+                        summon_count = monster.logic.perform_summon(current_time)
+                        # 在呼唤者附近随机生成小怪
+                        for _ in range(summon_count):
+                            if len(self.monsters) >= 500:
+                                break
+                            # 随机偏移位置，确保不超出地图边界
+                            import random
+                            offset_x = random.randint(-50, 50)
+                            offset_y = random.randint(-50, 50)
+                            spawn_x = max(50, min(monster.pos.x + offset_x, config.WORLD_WIDTH - 50))
+                            spawn_y = max(50, min(monster.pos.y + offset_y, config.WORLD_HEIGHT - 50))
+                            spawn_pos = pygame.Vector2(spawn_x, spawn_y)
+                            
+                            # 创建普通游荡者
+                            from systems.monsters.monster_factory import create_monster
+                            from entities.monster_sprite import MonsterSprite
+                            new_monster_logic = create_monster("Wanderer", monster.logic.level - 20, False, (0, 0))
+                            new_monster = MonsterSprite(new_monster_logic, spawn_pos)
+                            self.monsters.add(new_monster)
+                            
+                            if config.DEBUG_COMBAT_LOG:
+                                print(f"[COMBAT] {monster.logic.name} 召唤了 {new_monster_logic.name}！", flush=True)
+            
+            # 不死者：更新残躯状态
+            if hasattr(monster.logic, 'elite_type') and monster.logic.elite_type == 'undying':
+                if monster.logic.update_undying(current_time):
+                    # 残躯结束，真正死亡
+                    monster.kill()
+        
         # 3. 更新摄像机 (Spec II)
         self.camera.update(self.player)
         
@@ -349,7 +420,42 @@ class Game:
         
         # 子弹 vs 怪物 (使用穿透机制)
         from entities.floating_text import FloatingText
-        hits = pygame.sprite.groupcollide(self.monsters, self.bullets, False, False)
+
+        # 使用圆形碰撞检测：避免细长的食尸鬼在未旋转 rect 时产生不自然的视觉
+        def _monster_bullet_collide(monster_sprite, bullet_sprite):
+            # 使用 monster_sprite.collision_radius（已在 MonsterSprite._set_dimensions 中设置）
+            br = getattr(bullet_sprite, 'radius', None)
+            if getattr(monster_sprite.logic, 'type', None) == 'Ghoul' and br is not None:
+                # 对于 Ghoul 使用旋转矩形检测：将子弹点旋转到怪物局部坐标系后做 AABB + 半径检测
+                # 交换 width/height 保证短边朝向前方
+                w = getattr(monster_sprite, 'height', 0)
+                h = getattr(monster_sprite, 'width', 0)
+                angle = monster_sprite.angle_rad
+                # 将子弹相对于怪物中心的向量旋转 -angle
+                dx = bullet_sprite.pos.x - monster_sprite.pos.x
+                dy = bullet_sprite.pos.y - monster_sprite.pos.y
+                ca = math.cos(-angle)
+                sa = math.sin(-angle)
+                lx = dx * ca - dy * sa
+                ly = dx * sa + dy * ca
+                # AABB 检查：最近点
+                half_w = w / 2.0
+                half_h = h / 2.0
+                nearest_x = max(-half_w, min(lx, half_w))
+                nearest_y = max(-half_h, min(ly, half_h))
+                ddx = lx - nearest_x
+                ddy = ly - nearest_y
+                return (ddx*ddx + ddy*ddy) <= (br * br)
+            else:
+                mr = getattr(monster_sprite, 'collision_radius', None)
+                if mr is None or br is None:
+                    # 回退到 rect 碰撞
+                    return monster_sprite.rect.colliderect(bullet_sprite.rect)
+                dx = monster_sprite.pos.x - bullet_sprite.pos.x
+                dy = monster_sprite.pos.y - bullet_sprite.pos.y
+                return (dx*dx + dy*dy) <= (mr + br) * (mr + br)
+
+        hits = pygame.sprite.groupcollide(self.monsters, self.bullets, False, False, collided=_monster_bullet_collide)
         
         for monster_hit, bullets in hits.items():
             # 跳过正在复活的游荡者
@@ -370,6 +476,15 @@ class Game:
                 # 调用怪物受伤方法
                 result = monster_hit.logic.take_damage(damage, "玩家")
                 
+                # 处理荆棘守卫反弹
+                if result.get('reflected_damage', 0) > 0:
+                    # 反弹伤害给玩家
+                    self.player.take_damage(result['reflected_damage'], f"{monster_hit.logic.name}的荆棘反弹")
+                    # 添加反弹文字提示
+                    text_pos = (monster_hit.pos.x, monster_hit.pos.y - 50)
+                    text = FloatingText("REFLECT", text_pos, (255, 100, 100), 1.0, 24)
+                    self.floating_texts.append(text)
+                
                 # 处理格挡
                 if result['blocked']:
                     text_pos = (monster_hit.pos.x, monster_hit.pos.y - 30)
@@ -388,9 +503,15 @@ class Game:
                     if monster_hit.logic.type == 'Bucket':
                         from systems.monsters import config as mcfg
                         explosion_damage = monster_hit.logic.max_hp * mcfg.MONSTER_SKILL_PARAMS['Bucket_Corpse_Explosion_HP_Dmg']
+                        
+                        # 庞然：尸爆范围增加
+                        explosion_range = config.CORPSE_EXPLOSION_RANGE
+                        if hasattr(monster_hit.logic, 'get_range_bonus'):
+                            explosion_range += monster_hit.logic.get_range_bonus()
+                        
                         explosion = CorpseExplosion(
                             monster_hit.pos.copy(),
-                            config.CORPSE_EXPLOSION_RANGE,
+                            explosion_range,
                             config.CORPSE_EXPLOSION_DELAY,
                             explosion_damage,
                             monster_hit.logic.name
@@ -479,7 +600,31 @@ class Game:
         
         if attack_info['type'] == 'melee':
             # 近战攻击：直接对玩家造成伤害
-            self.player.take_damage(attack_info['damage'], attack_info['attacker_name'], armor_ignore)
+            actual_damage = self.player.take_damage(attack_info['damage'], attack_info['attacker_name'], armor_ignore)
+            
+            # 处理暴击显示
+            if attack_info.get('is_crit', False):
+                # 找到攻击者以显示暴击文字
+                for monster in self.monsters:
+                    if monster.logic.name == attack_info['attacker_name']:
+                        text_pos = (monster.pos.x, monster.pos.y - 40)
+                        text = FloatingText("CRIT!", text_pos, (255, 50, 50), 1.2, 28)
+                        self.floating_texts.append(text)
+                        break
+            
+            # 处理吸血
+            lifesteal_factor = attack_info.get('lifesteal_factor', 0)
+            if lifesteal_factor > 0 and actual_damage > 0:
+                heal_amount = actual_damage * lifesteal_factor
+                # 找到攻击者并治疗
+                for monster in self.monsters:
+                    if monster.logic.name == attack_info['attacker_name']:
+                        old_hp = monster.logic.current_hp
+                        monster.logic.current_hp = min(monster.logic.current_hp + heal_amount, monster.logic.max_hp)
+                        healed = monster.logic.current_hp - old_hp
+                        if healed > 0 and config.DEBUG_COMBAT_LOG:
+                            print(f"[COMBAT] {monster.logic.name} 吸血回复 {healed:.1f} HP！", flush=True)
+                        break
         
         elif attack_info['type'] == 'aoe':
             # AoE攻击：检查玩家是否在范围内
@@ -500,15 +645,23 @@ class Game:
         
         # 绘制所有怪物
         for monster in self.monsters:
-            drawing.draw_monster(self.screen, monster, self.camera)
+            drawing.draw_monster(self.screen, monster, self.camera, self.sprite_images)
             
         # 绘制玩家
-        drawing.draw_player(self.screen, self.player, self.camera)
+        drawing.draw_player(self.screen, self.player, self.camera, self.sprite_images)
         
         # 绘制子弹 (覆盖在其他实体之上)
         for bullet in self.bullets:
             # 子弹有自己的 image，可以直接 blit
             self.screen.blit(bullet.image, self.camera.apply_to_rect(bullet.rect))
+
+        # 绘制碰撞调试图形（玩家/怪物/子弹） - 通过 config.DEBUG_DRAW_COLLISIONS 控制
+        try:
+            import config as game_config
+        except Exception:
+            game_config = config
+        if getattr(game_config, 'DEBUG_DRAW_COLLISIONS', False):
+            drawing.draw_collision_shapes(self.screen, self.player, self.monsters, self.bullets, self.camera)
 
         # 绘制树木 (覆盖在实体之上，实现遮挡效果)
         drawing.draw_trees(self.screen, self.city_map, self.camera, self.tile_images)
@@ -517,7 +670,7 @@ class Game:
         drawing.draw_monster_attack_effects(self.screen, self.monsters, self.camera)
         
         # 绘制尸爆效果
-        drawing.draw_corpse_explosions(self.screen, self.corpse_explosions, self.camera)
+        drawing.draw_corpse_explosions(self.screen, self.corpse_explosions, self.camera, self.sprite_images)
         
         # 绘制浮动文字（BLOCK、MISS等）
         for text in self.floating_texts:

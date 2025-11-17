@@ -28,8 +28,13 @@ MONSTER_SKILL_PARAMS = {
     "Wanderer_Aura_Range": 200,        # 光环范围 (px)
     "Wanderer_Revive_HP": 1.00,        # 重生 HP 100%
     "Wanderer_Revive_Delay": 3.0,      # 重生延迟 (秒)
-    "Wanderer_Elite_Spawn_Min": 1,
-    "Wanderer_Elite_Spawn_Max": 3,     # 每次召唤数量
+    
+    # 游荡者精英技能
+    "Wanderer_Summoner_Range": 400,    # 呼唤者：威胁范围 (px)
+    "Wanderer_Summoner_Cooldown": 20.0,  # 呼唤者：召唤冷却 (秒)
+    "Wanderer_Summoner_Count_Min": 3,  # 呼唤者：最少召唤数量
+    "Wanderer_Summoner_Count_Max": 5,  # 呼唤者：最多召唤数量
+    "Wanderer_Undying_Duration": 10.0, # 不死者：残躯持续时间 (秒)
     
     # 铁桶 (Bucket)
     "Bucket_Block_Chance": 0.15,       # 格挡概率 15%
@@ -40,16 +45,29 @@ MONSTER_SKILL_PARAMS = {
     "Bucket_AOE_Range": 100,           # AoE 攻击范围 (px)
     "Bucket_Corpse_Explosion_HP_Dmg": 0.05, # 尸爆：最大生命值 5% 伤害
     "Bucket_Corpse_Explosion_Range": 300,   # 尸爆范围 (px)
-    "Bucket_Giant_HP_Threshold": 0.20, # 巨人：每减少 20% HP
-    "Bucket_Giant_Buff_Factor": 0.10,  # 巨人：攻防增加 10%
+    
+    # 铁桶精英技能
+    "Bucket_Titan_Size_Mult": 1.5,     # 庞然：体型缩放倍数
+    "Bucket_Titan_Range_Bonus": 200,   # 庞然：范围加成 (px)
+    "Bucket_Thornguard_Reflect_Factor": 0.25,  # 荆棘守卫：反弹伤害比例
+    "Bucket_Thornguard_Cooldown": 10.0,  # 荆棘守卫：反弹冷却 (秒)
 
     # 食尸鬼 (Ghoul)
     "Ghoul_Dash_Min_Range": 300,       # 迅扑触发最小范围 (px)
     "Ghoul_Dash_Max_Range": 500,       # 迅扑触发最大范围 (px)
     "Ghoul_Evade_Chance": 0.20,        # 闪避率 20%
     "Ghoul_Lone_Wolf_Armor_Ignore": 0.20, # 独狼：无视 20% 护甲
-    "Ghoul_Elite_Crit_Chance": 0.15,   # 暴击率 15%
-    "Ghoul_Elite_Crit_Dmg": 0.50,      # 暴击伤害 50%
+    
+    # 食尸鬼嗜血技能（所有食尸鬼共有）
+    "Ghoul_Bloodthirst_Crit_Chance": 0.30,   # 嗜血：暴击率 30%
+    "Ghoul_Bloodthirst_Crit_Dmg_Mult": 2.0,  # 嗜血：暴击伤害倍率 200%
+    "Ghoul_Bloodthirst_Lifesteal": 0.20,     # 嗜血：吸血比例 20%
+    
+    # 食尸鬼精英技能
+    "Ghoul_ShadowHunter_Attack_Cooldown": 0.7,  # 暗影猎手：攻击冷却 (秒)
+    "Ghoul_ShadowHunter_Speed_Mult": 1.2,       # 暗影猎手：速度倍率
+    "Ghoul_Silverwing_Attack_Range": 300,       # 银翼猎手：攻击范围 (px)
+    "Ghoul_Silverwing_Projectile_Speed": 400,   # 银翼猎手：弹道速度 (px/s)
 }
 
 # --- 难度和怪物生成 ---

@@ -8,20 +8,27 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import config
-from systems.monsters.monster_logic import Monster
+from systems.monsters.monster_factory import Monster
 
 class MonsterSprite(pygame.sprite.Sprite):
     """
     怪物精灵类，包装 Monster 逻辑类，处理 AI、移动和渲染。
     """
-    def __init__(self, monster_data_logic, world_pos_x, world_pos_y):
+    def __init__(self, monster_data_logic, world_pos_x_or_vec, world_pos_y=None):
         super().__init__()
         
         # 1. 逻辑
         self.logic = monster_data_logic
         
         # 2. 位置与物理
-        self.pos = pygame.math.Vector2(world_pos_x, world_pos_y)
+        # 支持两种调用方式：(logic, x, y) 或 (logic, vector)
+        if world_pos_y is None:
+            # 传入的是Vector2
+            self.pos = world_pos_x_or_vec.copy() if hasattr(world_pos_x_or_vec, 'copy') else pygame.math.Vector2(world_pos_x_or_vec)
+        else:
+            # 传入的是x, y坐标
+            self.pos = pygame.math.Vector2(world_pos_x_or_vec, world_pos_y)
+        
         self.vel = pygame.math.Vector2(0, 0)
         
         # 3. 尺寸与渲染 (Spec III)
@@ -63,7 +70,7 @@ class MonsterSprite(pygame.sprite.Sprite):
         self.wander_change_interval = 2.0  # 每2秒改变一次方向
         
         # 食尸鬼：椭圆巡逻状态
-        self.patrol_center = pygame.math.Vector2(world_pos_x, world_pos_y)  # 巡逻中心
+        self.patrol_center = self.pos.copy()  # 巡逻中心
         self.patrol_angle = 0  # 当前角度
         self.patrol_speed = 1.0  # 巡逻角速度 (弧度/秒)
         self.patrol_radius_x = 200  # 椭圆半长轴（增加）
@@ -81,6 +88,66 @@ class MonsterSprite(pygame.sprite.Sprite):
         
         self.rect = self.image.get_rect(center=self.pos)
 
+    # --- 辅助: 旋转矩形 / SAT 碰撞检测 ---
+    def _oriented_corners(self, center, w, h, angle_rad):
+        """返回按顺时针/逆时针顺序的四个角点 (x,y) 列表，角点以世界坐标给出"""
+        cx, cy = center.x, center.y
+        hw = w / 2.0
+        hh = h / 2.0
+        # 矩形局部坐标（逆时针）
+        local = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+        ca = math.cos(angle_rad)
+        sa = math.sin(angle_rad)
+        pts = []
+        for lx, ly in local:
+            rx = cx + (lx * ca - ly * sa)
+            ry = cy + (lx * sa + ly * ca)
+            pts.append((rx, ry))
+        return pts
+
+    def _project_polygon(self, axis, poly):
+        """在 axis 上投影多边形，返回 (min, max) 标量投影值"""
+        dots = [axis[0] * p[0] + axis[1] * p[1] for p in poly]
+        return min(dots), max(dots)
+
+    def _normalize(self, v):
+        x, y = v
+        l = math.hypot(x, y)
+        if l == 0:
+            return (0.0, 0.0)
+        return (x / l, y / l)
+
+    def _sat_min_overlap(self, poly1, poly2):
+        """对两个矩形多边形计算 SAT 最小重叠。返回 (overlap, axis) 或 (0, None) 如果没有碰撞。"""
+        # 构造候选轴：poly1 边法线 + poly2 边法线
+        axes = []
+        for poly in (poly1, poly2):
+            n = len(poly)
+            for i in range(n):
+                p1 = poly[i]
+                p2 = poly[(i + 1) % n]
+                edge = (p2[0] - p1[0], p2[1] - p1[1])
+                # 法线
+                axis = (-edge[1], edge[0])
+                axis = self._normalize(axis)
+                axes.append(axis)
+
+        min_overlap = float('inf')
+        mtv_axis = None
+
+        for axis in axes:
+            min1, max1 = self._project_polygon(axis, poly1)
+            min2, max2 = self._project_polygon(axis, poly2)
+            # 计算重叠
+            overlap = min(max1, max2) - max(min1, min2)
+            if overlap <= 0:
+                return 0.0, None  # 无碰撞
+            if overlap < min_overlap:
+                min_overlap = overlap
+                mtv_axis = axis
+
+        return min_overlap, mtv_axis
+
     def _set_dimensions(self):
         """根据 Spec III 设置实体的尺寸"""
         t = self.logic.type
@@ -89,17 +156,27 @@ class MonsterSprite(pygame.sprite.Sprite):
 
         if t == 'Wanderer':
             self.radius = config.WANDERER_ELITE_RADIUS if e else config.WANDERER_RADIUS
+            self.collision_radius = self.radius
         
         elif t == 'Bucket':
             self.radius = config.BUCKET_ELITE_RADIUS if e else config.BUCKET_RADIUS
+            self.collision_radius = self.radius
+            
+            # 庞然：体型缩放
+            if hasattr(self.logic, 'get_size_multiplier'):
+                size_mult = self.logic.get_size_multiplier()
+                self.radius *= size_mult
+                self.collision_radius *= size_mult
         
         elif t == 'Ghoul':
-            if e and '飞天' in skills:
+            if e and '银翼猎手' in skills:
                 self.width, self.height = config.GHOUL_ELITE_FLYING_SIZE
             elif e:
                 self.width, self.height = config.GHOUL_ELITE_SIZE
             else:
                 self.width, self.height = config.GHOUL_SIZE
+            # Ghoul 是细长的，用近似圆半径用于碰撞检测以避免不旋转的 axis-aligned rect 带来视觉不一致
+            self.collision_radius = max(self.width, self.height) / 2
 
     def update(self, dt, player_pos, wall_sprites):
         """更新怪物AI和位置"""
@@ -108,6 +185,9 @@ class MonsterSprite(pygame.sprite.Sprite):
         # 游荡者复活期间不移动
         if self.logic.is_reviving:
             return
+
+        # 记录本帧移动前的位置，用于精确碰撞分离
+        self._prev_pos = self.pos.copy()
         
         # 处理后退硬直状态
         if self.attack_state == 'knockback':
@@ -217,40 +297,104 @@ class MonsterSprite(pygame.sprite.Sprite):
                     self.vel = pygame.math.Vector2(0, 0)
 
         # 移动和碰撞 (与 Player 相同)
+        # X轴移动并解决碰撞
         self.pos.x += self.vel.x * dt
         self.rect.centerx = self.pos.x
         self._check_collision('x', wall_sprites)
-        
+
+        # Y轴移动并解决碰撞
         self.pos.y += self.vel.y * dt
         self.rect.centery = self.pos.y
         self._check_collision('y', wall_sprites)
+        
+        # 地图边界检查：防止怪物走出地图边界
+        self._clamp_to_map_bounds()
 
+    def _clamp_to_map_bounds(self):
+        """将怪物位置限制在地图边界内，防止出界"""
+        # 获取怪物的有效半径（考虑体型缩放）
+        if hasattr(self, 'radius') and self.radius > 0:
+            margin = self.radius + 5  # 额外安全边距
+        else:
+            margin = max(self.width, self.height) / 2 + 5
+        
+        # 限制X坐标
+        if self.pos.x < margin:
+            self.pos.x = margin
+            self.rect.centerx = self.pos.x
+        elif self.pos.x > config.WORLD_WIDTH - margin:
+            self.pos.x = config.WORLD_WIDTH - margin
+            self.rect.centerx = self.pos.x
+        
+        # 限制Y坐标
+        if self.pos.y < margin:
+            self.pos.y = margin
+            self.rect.centery = self.pos.y
+        elif self.pos.y > config.WORLD_HEIGHT - margin:
+            self.pos.y = config.WORLD_HEIGHT - margin
+            self.rect.centery = self.pos.y
+    
     def _check_collision(self, direction, wall_sprites):
         """辅助函数：检测并解决碰撞"""
-        hits = pygame.sprite.spritecollide(self, wall_sprites, False)
-        if hits:
-            # 食尸鬼可以穿过河流
-            if self.logic.type == 'Ghoul' and hits[0].tile_type == '~':
-                return  # 忽略河流碰撞
-            
-            # 其他怪物或墙体碰撞：处理碰撞
-            if direction == 'x':
-                if self.vel.x > 0: self.rect.right = hits[0].rect.left
-                if self.vel.x < 0: self.rect.left = hits[0].rect.right
-                self.pos.x = self.rect.centerx
-                
-                # 游荡者撞墙后改变方向，避免鬼打墙
-                if self.logic.type == 'Wanderer':
-                    self.wander_timer = self.wander_change_interval  # 立即触发方向改变
-            
-            if direction == 'y':
-                if self.vel.y > 0: self.rect.bottom = hits[0].rect.top
-                if self.vel.y < 0: self.rect.top = hits[0].rect.bottom
-                self.pos.y = self.rect.centery
-                
-                # 游荡者撞墙后改变方向，避免鬼打墙
-                if self.logic.type == 'Wanderer':
-                    self.wander_timer = self.wander_change_interval  # 立即触发方向改变
+        # 对于大多数怪物使用原有的 rect 碰撞检测
+        if self.logic.type != 'Ghoul':
+            hits = pygame.sprite.spritecollide(self, wall_sprites, False)
+            if hits:
+                # 食尸鬼在此分支被排除
+                # 其他怪物或墙体碰撞：处理碰撞
+                if direction == 'x':
+                    if self.vel.x > 0: self.rect.right = hits[0].rect.left
+                    if self.vel.x < 0: self.rect.left = hits[0].rect.right
+                    self.pos.x = self.rect.centerx
+                    # 游荡者撞墙后改变方向，避免鬼打墙
+                    if self.logic.type == 'Wanderer':
+                        self.wander_timer = self.wander_change_interval  # 立即触发方向改变
+
+                if direction == 'y':
+                    if self.vel.y > 0: self.rect.bottom = hits[0].rect.top
+                    if self.vel.y < 0: self.rect.top = hits[0].rect.bottom
+                    self.pos.y = self.rect.centery
+                    # 游荡者撞墙后改变方向，避免鬼打墙
+                    if self.logic.type == 'Wanderer':
+                        self.wander_timer = self.wander_change_interval  # 立即触发方向改变
+            return
+
+        # Ghoul: 使用 circle (self.collision_radius) vs wall rect 的手工分离，避免 axis-aligned rect 在旋转视觉下不合理
+        # Ghoul 可以穿过河流
+        # 为效率，先对可能碰撞的墙做包围盒测试
+        r = getattr(self, 'collision_radius', max(self.width, self.height) / 2)
+        # 遍历所有墙体，检查圆与矩形是否相交
+        for wall in wall_sprites:
+            if hasattr(wall, 'tile_type') and wall.tile_type == '~':
+                # 食尸鬼可以穿过河流
+                continue
+
+            # 快速包围盒检测：墙体 rect 与圆的包围盒是否相交
+            if not wall.rect.colliderect(pygame.Rect(int(self.pos.x - r), int(self.pos.y - r), int(r*2), int(r*2))):
+                continue
+
+            # 精确检测：将圆心投影到矩形上，判断距离
+            closest_x = max(wall.rect.left, min(self.pos.x, wall.rect.right))
+            closest_y = max(wall.rect.top, min(self.pos.y, wall.rect.bottom))
+            dx = self.pos.x - closest_x
+            dy = self.pos.y - closest_y
+            if dx*dx + dy*dy <= r * r:
+                # 碰撞，按运动方向分离（只在对应轴上移动）
+                if direction == 'x':
+                    # 如果本帧向右移动，则将圆心置于墙左侧
+                    if self.pos.x > self._prev_pos.x:
+                        self.pos.x = wall.rect.left - r
+                    else:
+                        self.pos.x = wall.rect.right + r
+                    self.rect.centerx = int(self.pos.x)
+                else:  # 'y'
+                    if self.pos.y > self._prev_pos.y:
+                        self.pos.y = wall.rect.top - r
+                    else:
+                        self.pos.y = wall.rect.bottom + r
+                    self.rect.centery = int(self.pos.y)
+                # 一旦与一个墙体分离即可
+                return
     
     def _update_dash(self, dt, dist_to_player):
         """更新食尸鬼的迅扑状态"""
@@ -294,6 +438,16 @@ class MonsterSprite(pygame.sprite.Sprite):
         self.pos += self.knockback_direction * move_dist
         self.rect.center = self.pos
         
+        # 地图边界检查
+        self._clamp_to_map_bounds()
+        
+        # 检查是否被边界限制了
+        if self.pos.distance_to(old_pos + self.knockback_direction * move_dist) > 1:
+            # 被边界阻挡，停止后退
+            self.knockback_distance = 0
+            self.attack_state = 'idle'
+            # print(f"{self.logic.name} 后退时触及地图边界")
+        
         # 检查碰撞
         hits = pygame.sprite.spritecollide(self, wall_sprites, False)
         if hits:
@@ -302,7 +456,7 @@ class MonsterSprite(pygame.sprite.Sprite):
             self.rect.center = self.pos
             self.knockback_distance = 0
             self.attack_state = 'idle'
-            print(f"{self.logic.name} 后退时撞到墙壁")
+            # print(f"{self.logic.name} 后退时撞到墙壁")
         else:
             self.knockback_distance -= move_dist
     

@@ -13,7 +13,8 @@ if parent_dir not in sys.path:
 try:
     # 导入 citymap 包和 monsters 包的生成函数
     from citymap.citymap import CityMap 
-    from monsters.monster_logic import Monster, generate_monsters
+    from monsters.monster_factory import Monster
+    from monsters.monster_logic import generate_monsters
 except ImportError as e:
     print(f"导入错误：请确保 'citymap' 和 'monsters' 文件夹结构正确。错误信息: {e}")
     print("当前 sys.path:", sys.path)

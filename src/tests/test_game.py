@@ -12,7 +12,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from core.game import Game
-from systems.monsters.monster_logic import Monster
+from systems.monsters.monster_factory import Monster
 
 # 创建一个 10x10 的测试地图（全部为可通行的空地 '.'）
 TEST_MAP_10x10 = """

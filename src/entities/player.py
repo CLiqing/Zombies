@@ -38,8 +38,9 @@ class Player(pygame.sprite.Sprite):
         self.color = config.COLOR_GREEN
         self.facing_line_color = config.COLOR_RED
 
-        # 4. 射击冷却
+        # 4. 射击冷却和双手射击
         self.last_shot_time = 0
+        self.last_shot_hand = 'right'  # 上次射击的手，用于交替
         
         # 5. 受伤状态
         self.is_dead = False
@@ -78,9 +79,8 @@ class Player(pygame.sprite.Sprite):
         """(Spec III) 更新玩家朝向，使其指向鼠标位置"""
         dx = mouse_world_pos[0] - self.pos.x
         dy = mouse_world_pos[1] - self.pos.y
-        # atan2 的 y 轴在数学上是朝上的，而 Pygame 是朝下的
-        # 所以我们传入 -dy
-        self.angle_rad = math.atan2(-dy, dx)
+        # 使用标准的 atan2(dy, dx)（world coordinates with y increasing downward）
+        self.angle_rad = math.atan2(dy, dx)
 
     def _move_and_collide(self, dt, wall_sprites):
         """(Spec IV) 移动并处理与墙体的碰撞"""
@@ -138,8 +138,20 @@ class Player(pygame.sprite.Sprite):
         
         max_range = self.logic.total_stats.get("射程", 500) # 默认射程
         
-        # 在玩家朝向的边缘生成子弹
-        start_pos = self.pos + dir_vec * (self.radius + config.BULLET_RADIUS + 2)
+        # 随机选择左手或右手（50%概率）
+        import random
+        use_left_hand = random.random() < 0.5
+        
+        # 计算左右手的偏移（相对朝向±30度，距离为玩家半径）
+        hand_angle_offset = math.radians(30) if use_left_hand else math.radians(-30)
+        hand_angle = self.angle_rad + hand_angle_offset
+        hand_offset = pygame.math.Vector2(
+            math.cos(hand_angle) * self.radius,
+            -math.sin(hand_angle) * self.radius  # Pygame y轴向下
+        )
+        
+        # 子弹起始位置 = 玩家位置 + 手的偏移 + 朝向偏移
+        start_pos = self.pos + hand_offset + dir_vec * (config.BULLET_RADIUS + 2)
         
         # TODO: 测试用可命中目标数为2，正式游戏从属性获取：self.logic.total_stats.get("穿透", 1) + 1
         hit_count = 2  # 测试用（可以穿透击中2个目标）

@@ -9,7 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 try:
     from systems.citymap.citymap import CityMap 
-    from systems.monsters.monster_logic import Monster, generate_monsters
+    from systems.monsters.monster_factory import Monster
+    from systems.monsters.monster_logic import generate_monsters
 except ImportError as e:
     print(f"导入错误：请确保 'citymap' 和 'monsters' 文件夹结构正确。错误信息: {e}")
     import traceback

@@ -136,24 +136,34 @@ def draw_map(surface, city_map, camera, tile_images):
     # print(f"{'='*60}\n")
 # --- 2. 实体绘制 (Spec III) ---
 
-def draw_player(surface, player, camera):
-    """(Spec III) 绘制玩家：绿色圆圈 + 红色朝向线"""
+def draw_player(surface, player, camera, sprite_images=None):
+    """(Spec III) 绘制玩家：使用精灵图像"""
     
     # (Spec II) 转换坐标
     screen_x, screen_y = camera.apply_to_coords(player.pos.x, player.pos.y)
     screen_pos = (int(screen_x), int(screen_y))
     
-    # 绘制圆圈
-    pygame.draw.circle(surface, player.color, screen_pos, player.radius)
-    
-    # 绘制朝向线
-    end_x = int(screen_pos[0] + player.radius * math.cos(player.angle_rad))
-    # Pygame 的 y 轴是反的，所以 sin 的结果要取反
-    end_y = int(screen_pos[1] - player.radius * math.sin(player.angle_rad))
-    
-    pygame.draw.line(surface, player.facing_line_color, screen_pos, (end_x, end_y), 2)
+    # 使用图像绘制
+    if sprite_images and 'player' in sprite_images:
+        image = sprite_images['player']
+        # 缩放到玩家大小（直径）
+        size = player.radius * 2
+        scaled_image = pygame.transform.scale(image, (int(size), int(size)))
+        # 旋转图像（图像朝向正右，需要旋转到angle_rad）
+        angle_deg = -math.degrees(player.angle_rad)  # Pygame旋转是顺时针，所以取负
+        rotated_image = pygame.transform.rotate(scaled_image, angle_deg)
+        # 获取旋转后的rect并居中
+        rect = rotated_image.get_rect(center=screen_pos)
+        surface.blit(rotated_image, rect)
+    else:
+        # 降级方案：绘制圆圈
+        pygame.draw.circle(surface, player.color, screen_pos, player.radius)
+        # 绘制朝向线（y 轴向下，因此使用 +sin）
+        end_x = int(screen_pos[0] + player.radius * math.cos(player.angle_rad))
+        end_y = int(screen_pos[1] + player.radius * math.sin(player.angle_rad))
+        pygame.draw.line(surface, player.facing_line_color, screen_pos, (end_x, end_y), 2)
 
-def draw_monster(surface, monster_sprite, camera):
+def draw_monster(surface, monster_sprite, camera, sprite_images=None):
     """(Spec III) 根据怪物类型和精英状态绘制图案"""
     logic = monster_sprite.logic
     
@@ -168,34 +178,101 @@ def draw_monster(surface, monster_sprite, camera):
     t = logic.type
     e = logic.is_elite
     skills = logic.elite_skills
-
-    if t == 'Wanderer':
-        r = monster_sprite.radius
-        # 浅蓝色（活着），灰色（复活中的尸体）
-        if logic.is_reviving:
-            color = config.COLOR_GREY  # 尸体
-        else:
-            color = (100, 200, 255)  # 浅蓝色
-        _draw_rotated_triangle(surface, color, screen_pos, r, angle_rad)
+    
+    # 检查是否是庞然（需要缩放）
+    size_multiplier = 1.0
+    if hasattr(logic, 'get_size_multiplier'):
+        size_multiplier = logic.get_size_multiplier()
+    
+    # 确定使用的图像key
+    image_key = None
+    if sprite_images:
+        if t == 'Wanderer':
+            if e and '呼唤者' in skills and 'wanderer-召唤' in sprite_images:
+                image_key = 'wanderer-召唤'
+            elif e and '不死者' in skills and 'wanderer-不死' in sprite_images:
+                image_key = 'wanderer-不死'
+            elif 'wanderer' in sprite_images:
+                image_key = 'wanderer'
+        elif t == 'Bucket':
+            if e and '庞然' in skills and 'bucket-巨人' in sprite_images:
+                image_key = 'bucket-巨人'
+            elif e and '荆棘守卫' in skills and 'bucket-荆棘' in sprite_images:
+                image_key = 'bucket-荆棘'
+            elif 'bucket' in sprite_images:
+                image_key = 'bucket'
+        elif t == 'Ghoul':
+            if e and '暗影猎手' in skills and 'ghoul-暗影' in sprite_images:
+                image_key = 'ghoul-暗影'
+            elif e and '银翼猎手' in skills and 'ghoul-飞天' in sprite_images:
+                image_key = 'ghoul-飞天'
+            elif 'ghoul' in sprite_images:
+                image_key = 'ghoul'
+    
+    # 使用图像绘制
+    if image_key:
+        image = sprite_images[image_key]
         
-    elif t == 'Bucket':
-        r = monster_sprite.radius
-        color = config.COLOR_ORANGE
-        if e:
-            if '烈爆' in skills: color = config.COLOR_RED
-            elif '巨人' in skills: color = config.COLOR_GREY
-        pygame.draw.circle(surface, color, screen_pos, r)
+        # 根据怪物类型计算尺寸
+        if t in ['Wanderer', 'Bucket']:
+            # 圆形怪物：图像直径 = 2×半径
+            size = monster_sprite.radius * 2 * size_multiplier
+            scaled_image = pygame.transform.scale(image, (int(size), int(size)))
+        else:  # Ghoul
+            # 三角形怪物：使用width和height
+            scaled_image = pygame.transform.scale(image, (int(monster_sprite.width * size_multiplier), int(monster_sprite.height * size_multiplier)))
         
-    elif t == 'Ghoul':
-        w = monster_sprite.width
-        h = monster_sprite.height
-        color = config.COLOR_RED
-        if e and '飞天' in skills:
-            # 宽三角
-            _draw_rotated_triangle(surface, color, screen_pos, max(w, h) / 2, angle_rad, aspect_ratio=w/h)
-        else:
-            # 细长三角
-            _draw_rotated_triangle(surface, color, screen_pos, h / 2, angle_rad, aspect_ratio=w/h)
+        # 旋转图像
+        angle_deg = -math.degrees(angle_rad)
+        rotated_image = pygame.transform.rotate(scaled_image, angle_deg)
+        
+        # 复活中的游荡者：降低透明度
+        if logic.is_reviving and t == 'Wanderer':
+            rotated_image = rotated_image.copy()
+            rotated_image.set_alpha(128)  # 50%透明度
+        
+        # 绘制
+        rect = rotated_image.get_rect(center=screen_pos)
+        surface.blit(rotated_image, rect)
+    else:
+        # 降级方案：使用原来的几何图形绘制
+        if t == 'Wanderer':
+            r = monster_sprite.radius * size_multiplier
+            # 浅蓝色（活着），灰色（复活中的尸体）
+            if logic.is_reviving:
+                color = config.COLOR_GREY  # 尸体
+            else:
+                color = (100, 200, 255)  # 浅蓝色
+            _draw_rotated_triangle(surface, color, screen_pos, r, angle_rad)
+            
+        elif t == 'Bucket':
+            r = monster_sprite.radius * size_multiplier
+            color = config.COLOR_ORANGE
+            if e:
+                if '庞然' in skills: 
+                    color = config.COLOR_GREY
+                elif '荆棘守卫' in skills: 
+                    color = (150, 50, 150)  # 紫色
+            pygame.draw.circle(surface, color, screen_pos, int(r))
+            
+        elif t == 'Ghoul':
+            w = monster_sprite.width * size_multiplier
+            h = monster_sprite.height * size_multiplier
+            color = config.COLOR_RED
+            if e and '银翼猎手' in skills:
+                # 宽三角
+                _draw_rotated_triangle(surface, color, screen_pos, max(w, h) / 2, angle_rad, aspect_ratio=w/h)
+            else:
+                # 细长三角
+                _draw_rotated_triangle(surface, color, screen_pos, h / 2, angle_rad, aspect_ratio=w/h)
+    
+    # 绘制不死者残躯标记
+    if hasattr(logic, 'undying_active') and logic.undying_active:
+        # 在怪物头顶显示红色"DEATH"文字
+        font = pygame.font.Font(None, 24)
+        text_surface = font.render("DEATH", True, (255, 0, 0))
+        text_rect = text_surface.get_rect(center=(screen_pos[0], screen_pos[1] - int(monster_sprite.radius * size_multiplier) - 20))
+        surface.blit(text_surface, text_rect)
 
 def _draw_rotated_triangle(surface, color, center, size, angle_rad, aspect_ratio=1.0):
     """辅助函数：绘制一个旋转的等腰三角形 (尖端朝向 angle_rad)"""
@@ -405,30 +482,138 @@ def draw_monster_attack_effects(surface, monsters, camera):
                 blit_pos = (center_screen[0] - radius - 10, center_screen[1] - radius - 10)
                 surface.blit(ring_surface, blit_pos)
 
-def draw_corpse_explosions(surface, explosions, camera):
+def draw_corpse_explosions(surface, explosions, camera, sprite_images=None):
     """
-    绘制尸爆效果
+    绘制尸爆效果：铁桶图像从当前尺寸放大到最大半径
     """
     for explosion in explosions:
+        center_screen = camera.apply_to_coords(explosion.pos.x, explosion.pos.y)
+        
         if explosion.is_exploding:
-            center_screen = camera.apply_to_coords(explosion.pos.x, explosion.pos.y)
+            # 爆炸阶段：绘制放大的铁桶图像
             radius = int(explosion.current_radius)
             
-            if radius > 0:
-                # 红色爆炸圈，半透明
+            if radius > 0 and sprite_images and 'bucket' in sprite_images:
+                # 使用铁桶图像
+                image = sprite_images['bucket']
+                # 图像尺寸随爆炸半径放大
+                size = radius * 2
+                scaled_image = pygame.transform.scale(image, (int(size), int(size)))
+                
+                # 设置透明度（随爆炸进度逐渐消失）
+                alpha = int(255 * (1.0 - explosion.explosion_progress))
+                scaled_image.set_alpha(alpha)
+                
+                # 绘制
+                rect = scaled_image.get_rect(center=center_screen)
+                surface.blit(scaled_image, rect)
+            else:
+                # 降级方案：红色爆炸圈
                 explosion_surface = pygame.Surface((radius*2, radius*2), pygame.SRCALPHA)
-                alpha = int(255 * (1.0 - explosion.explosion_progress))  # 逐渐变透明
+                alpha = int(255 * (1.0 - explosion.explosion_progress))
                 color_with_alpha = (255, 100, 0, alpha)
                 pygame.draw.circle(explosion_surface, color_with_alpha, (radius, radius), radius, 3)
                 
-                # Blit到屏幕
                 blit_pos = (center_screen[0] - radius, center_screen[1] - radius)
                 surface.blit(explosion_surface, blit_pos)
         else:
             # 延迟阶段：在尸体位置闪烁警告
             if int(explosion.timer * 4) % 2 == 0:  # 每0.25秒闪烁
-                center_screen = camera.apply_to_coords(explosion.pos.x, explosion.pos.y)
                 pygame.draw.circle(surface, (255, 200, 0), center_screen, 10, 2)
+
+
+def draw_collision_shapes(surface, player, monsters_group, bullets_group, camera):
+    """调试用：绘制玩家/怪物/子弹的碰撞形状与尺寸标签
+
+    - 玩家：圆（player.radius）和 rect
+    - 游荡者/铁桶：圆（monster.radius）与 rect 边界
+    - 食尸鬼：rect (width x height) 以及近似半径 circle = max(w,h)/2
+    - 子弹：小圆
+    """
+    # 颜色定义
+    player_color = (0, 255, 0)
+    monster_color = (255, 0, 0)
+    elite_color = (255, 165, 0)
+    bullet_color = (255, 255, 0)
+    outline_color = (255, 255, 255)
+
+    # 简单字体用于绘制标签
+    try:
+        font = pygame.font.Font(None, 14)
+    except:
+        font = None
+
+    # 玩家：circle + rect
+    p_screen = camera.apply_to_coords(player.pos.x, player.pos.y)
+    pygame.draw.circle(surface, player_color, (int(p_screen[0]), int(p_screen[1])), int(player.radius), 1)
+    # rect
+    p_rect = camera.apply_to_rect(player.rect)
+    pygame.draw.rect(surface, player_color, p_rect, 1)
+    if font:
+        txt = font.render(f"P r={player.radius}", True, outline_color)
+        surface.blit(txt, (p_screen[0] + 6, p_screen[1] - 6))
+
+    # 怪物
+    for m in monsters_group:
+        m_screen = camera.apply_to_coords(m.pos.x, m.pos.y)
+        # 标记颜色：精英用不同颜色
+        col = elite_color if getattr(m.logic, 'is_elite', False) else monster_color
+
+        if getattr(m, 'radius', 0) and m.radius > 0 and m.logic.type != 'Ghoul':
+            # 圆形怪物
+            pygame.draw.circle(surface, col, (int(m_screen[0]), int(m_screen[1])), int(m.radius), 1)
+            # rect boundary for sprite image
+            m_rect = camera.apply_to_rect(m.rect)
+            pygame.draw.rect(surface, col, m_rect, 1)
+            if font:
+                txt = font.render(f"{m.logic.type} r={m.radius}", True, outline_color)
+                surface.blit(txt, (m_screen[0] + 6, m_screen[1] - 6))
+        else:
+            # 使用宽高的 rect（食尸鬼）
+            # 对于 Ghoul 绘制旋转矩形（世界坐标）并将顶点转换为屏幕坐标
+            if getattr(m.logic, 'type', None) == 'Ghoul':
+                w = getattr(m, 'width', 0)
+                h = getattr(m, 'height', 0)
+                angle = getattr(m, 'angle_rad', 0)
+                # 计算世界空间的四个角
+                cx, cy = m.pos.x, m.pos.y
+                hw = w / 2.0
+                hh = h / 2.0
+                ca = math.cos(angle)
+                sa = math.sin(angle)
+                local = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+                world_pts = []
+                for lx, ly in local:
+                    rx = cx + (lx * ca - ly * sa)
+                    ry = cy + (lx * sa + ly * ca)
+                    world_pts.append((rx, ry))
+
+                # 转换为屏幕坐标
+                screen_pts = [camera.apply_to_coords(px, py) for (px, py) in world_pts]
+                # 绘制多边形
+                pygame.draw.polygon(surface, col, screen_pts, 1)
+                # 绘制角点
+                for pt in screen_pts:
+                    pygame.draw.circle(surface, outline_color, (int(pt[0]), int(pt[1])), 2)
+                if font:
+                    txt = font.render(f"Ghoul w={int(w)} h={int(h)}", True, outline_color)
+                    surface.blit(txt, (m_screen[0] + 6, m_screen[1] - 6))
+            else:
+                m_rect = camera.apply_to_rect(m.rect)
+                pygame.draw.rect(surface, col, m_rect, 1)
+                approx_r = max(getattr(m, 'width', 0), getattr(m, 'height', 0)) / 2
+                pygame.draw.circle(surface, col, (int(m_screen[0]), int(m_screen[1])), int(approx_r), 1)
+                if font:
+                    txt = font.render(f"{m.logic.type} w={m.width} h={m.height}", True, outline_color)
+                    surface.blit(txt, (m_screen[0] + 6, m_screen[1] - 6))
+
+    # 子弹
+    for b in bullets_group:
+        b_screen = camera.apply_to_coords(b.pos.x, b.pos.y)
+        pygame.draw.circle(surface, bullet_color, (int(b_screen[0]), int(b_screen[1])), int(getattr(b, 'radius', 2)), 1)
+        if font:
+            txt = font.render(f"b r={getattr(b, 'radius', 0)}", True, outline_color)
+            surface.blit(txt, (b_screen[0] + 4, b_screen[1] - 4))
 
 def draw_game_over_ui(surface, game):
     """
